@@ -18,79 +18,80 @@ export default async (client: Client, message: Message) => {
 
       // Handle clearcache command
       if (command === 'clearcache') {
-      const msg = await message.reply('🔄 Clearing command cache...');
+        const msg = await message.reply('🔄 Clearing command cache...');
 
-      try {
-        const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
-        const clientId = process.env.CLIENT_ID!;
+        try {
+          const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
+          const clientId = process.env.CLIENT_ID!;
 
-        // Clear global commands
-        await rest.put(Routes.applicationCommands(clientId), { body: [] });
-        
-        // Clear guild commands if GUILD_ID is set
-        if (process.env.GUILD_ID) {
-          await rest.put(Routes.applicationGuildCommands(clientId, process.env.GUILD_ID), { body: [] });
+          // Clear global commands
+          await rest.put(Routes.applicationCommands(clientId), { body: [] });
+          
+          // Clear guild commands if GUILD_ID is set
+          if (process.env.GUILD_ID) {
+            await rest.put(Routes.applicationGuildCommands(clientId, process.env.GUILD_ID), { body: [] });
+          }
+
+          await msg.edit('✅ Successfully cleared all slash commands cache.');
+        } catch (err) {
+          console.error('Failed to clear commands:', err);
+          await msg.edit('❌ Failed to clear commands cache.');
         }
-
-        await msg.edit('✅ Successfully cleared all slash commands cache.');
-      } catch (err) {
-        console.error('Failed to clear commands:', err);
-        await msg.edit('❌ Failed to clear commands cache.');
+        return;
       }
-      return;
-    }
 
-    // Handle reload command
-    if (command === 'reload') {
-      const msg = await message.reply('🔄 Reloading commands...');
+      // Handle reload command
+      if (command === 'reload') {
+        const msg = await message.reply('🔄 Reloading commands...');
 
-      try {
-        const commands: any[] = [];
-        const commandsPath = path.join(__dirname, '..', 'commands');
+        try {
+          const commands: any[] = [];
+          const commandsPath = path.join(__dirname, '..', 'commands');
 
-        // Recursively load all command files
-        function loadCommands(dir: string) {
-          for (const file of fs.readdirSync(dir)) {
-            const fullPath = path.join(dir, file);
-            if (fs.statSync(fullPath).isDirectory()) {
-              loadCommands(fullPath);
-            } else if ((file.endsWith('.js') || file.endsWith('.ts')) && file !== 'reload.ts' && file !== 'clearcache.ts') {
-              try {
-                // Clear require cache
-                delete require.cache[require.resolve(fullPath)];
-                
-                const cmd = require(fullPath);
-                if (cmd.data) {
-                  commands.push(cmd.data.toJSON());
+          // Recursively load all command files
+          function loadCommands(dir: string) {
+            for (const file of fs.readdirSync(dir)) {
+              const fullPath = path.join(dir, file);
+              if (fs.statSync(fullPath).isDirectory()) {
+                loadCommands(fullPath);
+              } else if ((file.endsWith('.js') || file.endsWith('.ts')) && file !== 'reload.ts' && file !== 'clearcache.ts') {
+                try {
+                  // Clear require cache
+                  delete require.cache[require.resolve(fullPath)];
+                  
+                  const cmd = require(fullPath);
+                  if (cmd.data) {
+                    commands.push(cmd.data.toJSON());
+                  }
+                } catch (err) {
+                  console.error(`Failed to load command ${file}:`, err);
                 }
-              } catch (err) {
-                console.error(`Failed to load command ${file}:`, err);
               }
             }
           }
+
+          loadCommands(commandsPath);
+
+          const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
+          const clientId = process.env.CLIENT_ID!;
+
+          // Register to guild for instant updates (dev) OR globally (production)
+          if (process.env.GUILD_ID) {
+            await rest.put(
+              Routes.applicationGuildCommands(clientId, process.env.GUILD_ID),
+              { body: commands }
+            );
+          } else {
+            await rest.put(Routes.applicationCommands(clientId), { body: commands });
+          }
+
+          await msg.edit(`✅ Successfully reloaded ${commands.length} slash commands.\n\n**Commands:**\n${commands.map(c => `• /${c.name}`).join('\n')}`);
+        } catch (err) {
+          console.error('Failed to reload commands:', err);
+          await msg.edit('❌ Failed to reload commands.');
         }
-
-        loadCommands(commandsPath);
-
-        const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
-        const clientId = process.env.CLIENT_ID!;
-
-        // Register to guild for instant updates (dev) OR globally (production)
-        if (process.env.GUILD_ID) {
-          await rest.put(
-            Routes.applicationGuildCommands(clientId, process.env.GUILD_ID),
-            { body: commands }
-          );
-        } else {
-          await rest.put(Routes.applicationCommands(clientId), { body: commands });
-        }
-
-        await msg.edit(`✅ Successfully reloaded ${commands.length} slash commands.\n\n**Commands:**\n${commands.map(c => `• /${c.name}`).join('\n')}`);
-      } catch (err) {
-        console.error('Failed to reload commands:', err);
-        await msg.edit('❌ Failed to reload commands.');
+        return;
       }
-      return;
     }
     
     // If developer mentioned bot but no command, fall through to regular mention response
@@ -107,9 +108,9 @@ export default async (client: Client, message: Message) => {
         .setTitle('👋 Hello! I\'m NodeBot')
         .setDescription(`Thanks for mentioning me! I'm here to help manage this server.`)
         .addFields(
-          { name: '📚 Get Started', value: 'Use `/help` to see all available commands!', inline: false },
-          { name: '🎫 Need Support?', value: 'DM me with the word `help` to create a support ticket.', inline: false },
-          { name: '🔗 Quick Links', value: 'Use `/links` to see our services and links.', inline: false }
+          { name: '📚 Get Started:', value: 'Use `/help` to see all available commands!', inline: false },
+          { name: '🎫 Need Support?', value: 'DM me with the word `help` to create a support ticket. Remember we don\'t allow Billing or Account Support via Discord.', inline: false },
+          { name: '🔗 Quick Links:', value: 'Use `/links` to see our services and links.', inline: false }
         )
         .setThumbnail(client.user?.displayAvatarURL() || '')
         .setTimestamp()
