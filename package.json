@@ -1,0 +1,26 @@
+{
+  "name": "nodebot-v2",
+  "version": "0.1.0",
+  "description": "Discord bot in TypeScript with PostgreSQL",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "discord.js": "^14.11.0",
+    "dotenv": "^16.0.3",
+    "@prisma/client": "^5.8.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.5.0",
+    "prisma": "^5.8.0"
+  }
+}

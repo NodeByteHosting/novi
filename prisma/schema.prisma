@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ModerationLog {
+  id           Int      @id @default(autoincrement())
+  guildId      String   @map("guild_id")
+  action       String
+  moderatorId  String   @map("moderator_id")
+  targetId     String   @map("target_id")
+  reason       String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("moderation_logs")
+}
+
+model Warning {
+  id          Int      @id @default(autoincrement())
+  guildId     String   @map("guild_id")
+  userId      String   @map("user_id")
+  moderatorId String   @map("moderator_id")
+  reason      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("warnings")
+}

@@ -15,4 +15,5 @@ This scaffold includes:
 - Logging to a configured `LOGS_CHANNEL_ID`
 
 See `src/` for implementation details.
-# Bot
+
+Ask Connor for the `.env` stuff.
