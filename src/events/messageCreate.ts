@@ -8,16 +8,16 @@ export default async (client: Client, message: Message) => {
 
   // Check if message mentions the bot in a guild (for developer commands)
   if (message.guild && message.mentions.has(client.user!.id)) {
-    const devIds = process.env.DEV_IDS?.split(',') || [];
+    const devIds = process.env.DEV_IDS?.split(',').map(id => id.trim()) || [];
     
-    if (!devIds.includes(message.author.id)) return;
+    // Check if it's a developer for special commands
+    if (devIds.includes(message.author.id)) {
+      const content = message.content.replace(`<@${client.user!.id}>`, '').trim();
+      const args = content.split(/\s+/);
+      const command = args[0]?.toLowerCase();
 
-    const content = message.content.replace(`<@${client.user!.id}>`, '').trim();
-    const args = content.split(/\s+/);
-    const command = args[0]?.toLowerCase();
-
-    // Handle clearcache command
-    if (command === 'clearcache') {
+      // Handle clearcache command
+      if (command === 'clearcache') {
       const msg = await message.reply('🔄 Clearing command cache...');
 
       try {
@@ -90,6 +90,32 @@ export default async (client: Client, message: Message) => {
         console.error('Failed to reload commands:', err);
         await msg.edit('❌ Failed to reload commands.');
       }
+      return;
+    }
+    
+    // If developer mentioned bot but no command, fall through to regular mention response
+  }
+
+  // Regular bot mention (non-developer or no command) - show help info
+  if (message.guild && message.mentions.has(client.user!.id)) {
+    const content = message.content.replace(`<@${client.user!.id}>`, '').trim();
+    
+    // Only show help embed if no additional text (or not a dev command)
+    if (!content || content.length === 0) {
+      const embed = new EmbedBuilder()
+        .setColor(0x3256d9)
+        .setTitle('👋 Hello! I\'m NodeBot')
+        .setDescription(`Thanks for mentioning me! I'm here to help manage this server.`)
+        .addFields(
+          { name: '📚 Get Started', value: 'Use `/help` to see all available commands!', inline: false },
+          { name: '🎫 Need Support?', value: 'DM me with the word `help` to create a support ticket.', inline: false },
+          { name: '🔗 Quick Links', value: 'Use `/links` to see our services and links.', inline: false }
+        )
+        .setThumbnail(client.user?.displayAvatarURL() || '')
+        .setTimestamp()
+        .setFooter({ text: '\u00a9Copyright 2024 - 2025 NodeByte LTD' });
+
+      await message.reply({ embeds: [embed] });
       return;
     }
   }
