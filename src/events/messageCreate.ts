@@ -137,14 +137,14 @@ export default async (client: Client, message: Message) => {
     const embed = new EmbedBuilder()
       .setColor(0x3256d9)
       .setTitle('🎫 Support Ticket System')
-      .setDescription('Please select the type of support you need from the dropdown menu below.\n\nOur support team will assist you as soon as possible.')
+      .setDescription('Please select the type of support you need from the dropdown menu below.\n\nOur support team will assist you as soon as possible. Please note that we do not provide **Billing or Account Support via Discord. For those issues, please open a support ticket on our website**.')
       .addFields(
         { name: '📋 General Support', value: 'General questions and assistance', inline: false },
         { name: '🖥️ Tech Support', value: 'Technical issues and troubleshooting', inline: false },
         { name: '🎮 Game Support', value: 'Game-related help and issues', inline: false },
         { name: '🔧 VPS Support', value: 'VPS server assistance', inline: false }
       )
-      .setFooter({ text: 'Please note we do not allow Billing or Account Support via Discord. Open a support ticket on the website. 😊 |\u00a9Copyright 2024 - 2025 NodeByte LTD' })
+      .setFooter({ text: '\u00a9Copyright 2024 - 2025 NodeByte LTD' })
       .setTimestamp();
 
     const menu = new StringSelectMenuBuilder()
