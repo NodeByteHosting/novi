@@ -7,7 +7,7 @@ export default async (client: Client) => {
   client.user?.setPresence({
     activities: [
       {
-        name: 'NodeByte Services',
+        name: '/help | NodeByte Services',
         type: ActivityType.Watching
       }
     ],
