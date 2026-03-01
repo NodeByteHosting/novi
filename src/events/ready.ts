@@ -9,14 +9,14 @@ export default async (client: Client) => {
   
   // Set up rotating bot status
   const statuses = [
-    { name: 'NodeByte Services', type: ActivityType.Watching },
-    { name: 'support tickets', type: ActivityType.Listening },
-    { name: 'FiveM servers', type: ActivityType.Watching },
-    { name: '/help for commands', type: ActivityType.Playing },
-    { name: 'NodeByte grow', type: ActivityType.Watching },
-    { name: 'for moderation', type: ActivityType.Listening },
-    { name: 'service statuses', type: ActivityType.Watching },
-    { name: 'support requests', type: ActivityType.Listening },
+    { name: 'Watching the NodeByte Services', type: ActivityType.Custom },
+    { name: 'Listening to support tickets', type: ActivityType.Custom },
+    { name: 'Watching FiveM servers', type: ActivityType.Custom },
+    { name: '/help for commands', type: ActivityType.Custom },
+    { name: 'Watching NodeByte grow', type: ActivityType.Custom },
+    { name: 'Listening for moderation', type: ActivityType.Custom },
+    { name: 'Watching service statuses', type: ActivityType.Custom },
+    { name: 'Listening to support requests', type: ActivityType.Custom },
   ];
 
   // Set initial random status
@@ -31,7 +31,7 @@ export default async (client: Client) => {
     const status = statuses[Math.floor(Math.random() * statuses.length)];
     client.user?.setPresence({
       activities: [status],
-      status: 'dnd'
+      status: 'dnd',
     });
   }, 30 * 1000);
 

@@ -197,54 +197,149 @@ export interface FiveMPlayer {
   name: string;
   identifiers: string[];
   ping: number;
-  state: string;
 }
 
+/**
+ * Normalized FiveM server data (mapped from CFX API response)
+ */
 export interface FiveMServer {
+  /** CFX join code (e.g. "pmdoa5") */
+  endpoint: string;
   hostname: string;
   clients: number;
   maxClients: number;
   gametype: string;
   mapname: string;
+  version: string;
   players: FiveMPlayer[];
-  resources?: string[];
+  resources: string[];
+  onesyncEnabled: boolean;
+  isPrivate: boolean;
+  connectEndPoints: string[];
+  vars: Record<string, string>;
+  ownerName: string;
+  ownerAvatar: string;
+  lastSeen: string;
+  tags: string[];
+  projectName: string;
+  projectDesc: string;
   iconVersion: number;
-  oneSync?: boolean;
-  onesyncEnabled?: boolean;
-  burstRoute?: number;
-  minClients?: number;
-  tags?: string[];
-  deployMode?: string;
-  txnId?: string;
-  svMaxClients?: number;
-  privateClients?: number;
-  connectEndPoints?: string[];
-  vars?: Record<string, string>;
-  uptime?: number;
+  upvotePower: number;
+  bannerUrl: string | null;
+  supportStatus: string;
+  locale: string;
+  gameName: string;
+  txAdminVersion: string;
+}
+
+/** Raw response shape from the CFX servers-frontend API */
+interface CFXApiResponse {
+  EndPoint: string;
+  Data: {
+    hostname: string;
+    gametype: string;
+    mapname: string;
+    clients: number;
+    sv_maxclients: number;
+    svMaxclients: number;
+    server: string;
+    enhancedHostSupport: boolean;
+    selfReportedClients: number;
+    players: FiveMPlayer[];
+    resources: string[];
+    ownerID: number;
+    private: boolean;
+    fallback: boolean;
+    connectEndPoints: string[];
+    lastSeen: string;
+    upvotePower: number;
+    burstPower: number;
+    ownerName: string;
+    ownerProfile: string;
+    ownerAvatar: string;
+    support_status: string;
+    iconVersion: number;
+    vars: Record<string, string>;
+    requestSteamTicket: string;
+    suspendedTill: string;
+  };
+}
+
+const FIVEM_API_BASE = 'https://servers-frontend.fivem.net/api/servers';
+
+/**
+ * Map raw CFX API response to our normalized FiveMServer interface
+ */
+function mapCFXResponse(raw: CFXApiResponse): FiveMServer {
+  const d = raw.Data;
+  const vars = d.vars || {};
+  const tagString = vars.tags || '';
+
+  return {
+    endpoint: raw.EndPoint,
+    hostname: d.hostname || 'Unknown',
+    clients: d.clients || 0,
+    maxClients: d.svMaxclients || d.sv_maxclients || 0,
+    gametype: d.gametype || 'Unknown',
+    mapname: d.mapname || 'Unknown',
+    version: d.server || 'Unknown',
+    players: d.players || [],
+    resources: d.resources || [],
+    onesyncEnabled: vars.onesync_enabled === 'true',
+    isPrivate: d.private || false,
+    connectEndPoints: d.connectEndPoints || [],
+    vars,
+    ownerName: d.ownerName || 'Unknown',
+    ownerAvatar: d.ownerAvatar || '',
+    lastSeen: d.lastSeen || '',
+    tags: tagString ? tagString.split(',').map(t => t.trim()).filter(Boolean) : [],
+    projectName: vars.sv_projectName || '',
+    projectDesc: vars.sv_projectDesc || '',
+    iconVersion: d.iconVersion || 0,
+    upvotePower: d.upvotePower || 0,
+    bannerUrl: vars.banner_detail || vars.banner_connecting || null,
+    supportStatus: d.support_status || 'unknown',
+    locale: vars.locale || 'en-US',
+    gameName: vars.gamename || 'gta5',
+    txAdminVersion: vars['txAdmin-version'] || '',
+  };
 }
 
 /**
- * Fetch FiveM server information from CFX.re API
+ * Fetch FiveM server information from the CFX servers-frontend API
+ * Accepts a CFX join code (e.g. "pmdoa5") or a cfx.re/join URL
  */
 export async function getFiveMServerInfo(serverIdentifier: string): Promise<FiveMServer | null> {
   try {
-    const response = await fetch(`https://servers.cfx.re/api/servers/single/${serverIdentifier}`, {
-      headers: {
-        'User-Agent': 'NodeByte-GameServer-Bot/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      logger.warn(`CFX API returned ${response.status} for server ${serverIdentifier}`, {
-        context: 'GameServer',
-        serverIdentifier,
-        status: response.status,
-      });
+    const cfxCode = parseFiveMServerIdentifier(serverIdentifier);
+    if (!cfxCode) {
+      logger.warn('Invalid FiveM server identifier', { context: 'GameServer', serverIdentifier });
       return null;
     }
 
-    const data: FiveMServer = await response.json();
-    return data;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const response = await fetch(`${FIVEM_API_BASE}/single/${cfxCode}`, {
+        headers: { 'User-Agent': 'NodeByte-GameServer-Bot/1.0' },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        logger.warn(`CFX API returned ${response.status} for server ${cfxCode}`, {
+          context: 'GameServer',
+          cfxCode,
+          status: response.status,
+        });
+        return null;
+      }
+
+      const raw: CFXApiResponse = await response.json();
+      return mapCFXResponse(raw);
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (err) {
     logger.error('Failed to fetch FiveM server info', {
       context: 'GameServer',
@@ -256,61 +351,39 @@ export async function getFiveMServerInfo(serverIdentifier: string): Promise<Five
 }
 
 /**
- * Fetch FiveM server resources from CFX.re API
+ * Fetch FiveM server resources from the CFX servers-frontend API
  */
 export async function getFiveMServerResources(serverIdentifier: string): Promise<string[] | null> {
-  try {
-    const response = await fetch(`https://servers.cfx.re/api/servers/single/${serverIdentifier}`, {
-      headers: {
-        'User-Agent': 'NodeByte-GameServer-Bot/1.0',
-      },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data: FiveMServer = await response.json();
-    return data.resources || [];
-  } catch (err) {
-    logger.error('Failed to fetch FiveM server resources', {
-      context: 'GameServer',
-      serverIdentifier,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  }
+  const server = await getFiveMServerInfo(serverIdentifier);
+  if (!server) return null;
+  return server.resources;
 }
 
 /**
- * Search for a FiveM server by name using CFX.re search
+ * Look up multiple FiveM servers by their CFX codes
+ * Since CFX has no public search API, this accepts an array of known codes
  */
-export async function searchFiveMServers(query: string, limit: number = 10): Promise<FiveMServer[] | null> {
-  try {
-    const response = await fetch(`https://servers.cfx.re/api/servers/search?query=${encodeURIComponent(query)}`, {
-      headers: {
-        'User-Agent': 'NodeByte-GameServer-Bot/1.0',
-      },
-    });
-
-    if (!response.ok) {
+export async function lookupFiveMServers(codes: string[]): Promise<FiveMServer[]> {
+  const results: FiveMServer[] = [];
+  // Query up to 10 servers in parallel
+  const batch = codes.slice(0, 10);
+  const promises = batch.map(async (code) => {
+    try {
+      return await getFiveMServerInfo(code);
+    } catch {
       return null;
     }
+  });
 
-    const data: FiveMServer[] = await response.json();
-    return data.slice(0, limit);
-  } catch (err) {
-    logger.error('Failed to search FiveM servers', {
-      context: 'GameServer',
-      query,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
+  const settled = await Promise.all(promises);
+  for (const server of settled) {
+    if (server) results.push(server);
   }
+  return results;
 }
 
 /**
- * Parse server identifier (host:port format)
+ * Parse server identifier (host:port format) for non-FiveM games
  */
 export function parseGameServerIdentifier(input: string, defaultPort: number): { host: string; port: number } | null {
   try {
@@ -335,33 +408,26 @@ export function parseGameServerIdentifier(input: string, defaultPort: number): {
 }
 
 /**
- * Parse FiveM server identifier from various input formats
+ * Parse FiveM server identifier from various input formats.
+ * Returns the CFX join code, or null if the input is not a valid identifier.
+ *
+ * The CFX API only accepts join codes (e.g. "pmdoa5"), NOT IP:port.
+ * Supported inputs:
+ *   - CFX join code: "pmdoa5"
+ *   - cfx.re/join URL: "https://cfx.re/join/pmdoa5" or "cfx.re/join/pmdoa5"
  */
 export function parseFiveMServerIdentifier(input: string): string | null {
-  // Handle CFX.re/join URLs (https://cfx.re/join/xxx or cfx.re/join/xxx)
-  const urlMatch = input.match(/(?:https?:\/\/)?cfx\.re\/join\/([a-zA-Z0-9]+)/i);
+  const trimmed = input.trim();
+
+  // Handle cfx.re/join URLs (https://cfx.re/join/xxx or cfx.re/join/xxx)
+  const urlMatch = trimmed.match(/(?:https?:\/\/)?cfx\.re\/join\/([a-zA-Z0-9]+)/i);
   if (urlMatch) {
     return urlMatch[1];
   }
 
-  // Handle IP:port format
-  if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(input)) {
-    return input;
-  }
-
-  // Handle hostname:port format (basic check)
-  if (/^[a-zA-Z0-9.-]+:\d+$/.test(input)) {
-    return input;
-  }
-
-  // Handle just IP
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(input)) {
-    return `${input}:30120`; // Default FiveM port
-  }
-
-  // Handle server UUID/identifier from CFX
-  if (/^[a-f0-9-]+$/.test(input)) {
-    return input;
+  // Handle bare CFX join code (alphanumeric, typically 5-7 chars)
+  if (/^[a-zA-Z0-9]{3,10}$/.test(trimmed)) {
+    return trimmed;
   }
 
   return null;

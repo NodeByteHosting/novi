@@ -1,54 +1,75 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { searchFiveMServers, FiveMServer } from '../../lib/gameServer';
+import { lookupFiveMServers, FiveMServer } from '../../lib/gameServer';
 import { logger } from '../../lib/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('fivemsearch')
-  .setDescription('Search for FiveM servers by name or query')
+  .setDescription('Look up multiple FiveM servers by their CFX codes')
   .addStringOption(option =>
     option
-      .setName('query')
-      .setDescription('Server name or search query')
+      .setName('codes')
+      .setDescription('CFX join codes separated by spaces (e.g. pmdoa5 abc123 xyz789)')
       .setRequired(true)
-  )
-  .addIntegerOption(option =>
-    option
-      .setName('limit')
-      .setDescription('Number of results (1-20)')
-      .setMinValue(1)
-      .setMaxValue(20)
-      .setRequired(false)
   )
   .setDMPermission(false);
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply();
 
-  const query = interaction.options.getString('query', true);
-  const limit = interaction.options.getInteger('limit') || 10;
+  const input = interaction.options.getString('codes', true);
+  const codes = input.trim().split(/[\s,]+/).filter(c => /^[a-zA-Z0-9]{3,10}$/.test(c));
+
+  if (codes.length === 0) {
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xFF5555)
+          .setTitle('Invalid Input')
+          .setDescription(
+            'Please provide valid CFX join codes separated by spaces.\n\n' +
+            '**Example:** `/fivemsearch pmdoa5 abc123`\n\n' +
+            'You can find server codes from [servers.fivem.net](https://servers.fivem.net) or `cfx.re/join/` links.'
+          )
+      ]
+    });
+    return;
+  }
+
+  if (codes.length > 10) {
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xFF5555)
+          .setTitle('Too Many Codes')
+          .setDescription('Please provide at most 10 server codes at a time.')
+      ]
+    });
+    return;
+  }
 
   try {
-    const servers = await searchFiveMServers(query, limit);
+    const servers = await lookupFiveMServers(codes);
 
-    if (!servers || servers.length === 0) {
+    if (servers.length === 0) {
       await interaction.editReply({
         embeds: [
           new EmbedBuilder()
             .setColor(0xFF5555)
-            .setTitle('No Results')
-            .setDescription(`No FiveM servers found matching: \`${query}\``)
+            .setTitle('No Servers Found')
+            .setDescription(`Could not find any of the provided servers. Make sure the CFX codes are correct.`)
         ]
       });
       return;
     }
 
-    const embeds = servers.map((server: FiveMServer, index: number) => {
-      const players = server.players || [];
-      const playerPercentage = Math.round((server.clients / server.maxClients) * 100);
+    const embeds = servers.slice(0, 10).map((server: FiveMServer, index: number) => {
+      const playerPercentage = server.maxClients > 0
+        ? Math.round((server.clients / server.maxClients) * 100)
+        : 0;
 
       return new EmbedBuilder()
         .setColor(server.clients > 0 ? 0x3BB98E : 0xFFA500)
-        .setTitle(`#${index + 1} - ${server.hostname || 'Unknown Server'}`)
+        .setTitle(`#${index + 1} — ${server.hostname || 'Unknown Server'}`)
         .addFields(
           { 
             name: '👥 Players', 
@@ -67,39 +88,31 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           },
           {
             name: '📦 Resources',
-            value: server.resources?.length?.toString() || '0',
+            value: server.resources.length.toString(),
             inline: true
           },
           {
             name: '📡 OneSync',
-            value: server.oneSync || server.onesyncEnabled ? '✓' : '✗',
+            value: server.onesyncEnabled ? '✓' : '✗',
             inline: true
           },
           {
-            name: 'ℹ️ Server ID',
-            value: `\`${server.connectEndPoints?.[0] || 'Unknown'}\``,
-            inline: false
-          }
+            name: '🏷️ CFX Code',
+            value: `\`${server.endpoint}\` ([Join](https://cfx.re/join/${server.endpoint}))`,
+            inline: true
+          },
         )
-        .setFooter({ text: `Result ${index + 1}/${servers.length} | Requested by ${interaction.user.tag}` })
+        .setFooter({ text: `Owner: ${server.ownerName} • Result ${index + 1}/${servers.length}` })
         .setTimestamp();
     });
 
-    // Send first result immediately
-    await interaction.editReply({ embeds: [embeds[0]] });
+    // Discord allows up to 10 embeds per message
+    await interaction.editReply({ embeds: embeds.slice(0, 10) });
 
-    // If more than one result, show pagination info
-    if (embeds.length > 1) {
-      await interaction.followUp({
-        content: `Showing ${embeds.length} results for \`${query}\`. Use embed navigation if available, or run the search again to see the next set.`,
-        ephemeral: true
-      });
-    }
-
-    logger.debug('FiveM server search completed', {
+    logger.debug('FiveM multi-server lookup completed', {
       context: 'FiveM',
-      query,
-      resultsFound: servers.length,
+      codesRequested: codes.length,
+      serversFound: servers.length,
     });
   } catch (err) {
     logger.error('Failed to execute fivemsearch command', {
@@ -112,7 +125,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         new EmbedBuilder()
           .setColor(0xFF5555)
           .setTitle('Error')
-          .setDescription('An error occurred while searching for servers. Please try again later.')
+          .setDescription('An error occurred while looking up servers. Please try again later.')
       ]
     });
   }

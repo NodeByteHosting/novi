@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption(option =>
     option
       .setName('server')
-      .setDescription('Server identifier (IP:port, hostname:port, CFX UUID, or cfx.re/join/... URL)')
+      .setDescription('CFX join code (e.g. pmdoa5) or cfx.re/join URL')
       .setRequired(true)
   )
   .setDMPermission(false);
@@ -25,7 +25,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         new EmbedBuilder()
           .setColor(0xFF5555)
           .setTitle('Invalid Server Identifier')
-          .setDescription('Please provide a valid server IP:port, hostname:port, CFX UUID, or cfx.re/join URL.')
+          .setDescription(
+            'Please provide a valid CFX join code or `cfx.re/join/...` URL.\n\n' +
+            '**Examples:**\n' +
+            '• `/fivemserver pmdoa5`\n' +
+            '• `/fivemserver https://cfx.re/join/pmdoa5`\n\n' +
+            'You can find server codes from [servers.fivem.net](https://servers.fivem.net) or `cfx.re/join/` links.'
+          )
       ]
     });
     return;
@@ -40,21 +46,20 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           new EmbedBuilder()
             .setColor(0xFF5555)
             .setTitle('Server Not Found')
-            .setDescription(`Could not find server: \`${serverIdentifier}\`\n\nMake sure the server is online and the identifier is correct.`)
+            .setDescription(`Could not find server: \`${serverIdentifier}\`\n\nMake sure the server is online and the CFX code is correct.`)
         ]
       });
       return;
     }
 
     const players = server.players || [];
-    const uptime = server.uptime ? Math.floor(server.uptime / 1000) : 0;
-    const uptimeText = uptime > 0 
-      ? `${uptime} seconds (${Math.floor(uptime / 3600)} hours)`
-      : 'Unknown';
+    const lastSeenDate = server.lastSeen ? new Date(server.lastSeen) : null;
+    const lastSeenText = lastSeenDate ? `<t:${Math.floor(lastSeenDate.getTime() / 1000)}:R>` : 'Unknown';
 
     const embed = new EmbedBuilder()
       .setColor(0x3BB98E)
       .setTitle(server.hostname || 'FiveM Server')
+      .setDescription(server.projectDesc || null)
       .addFields(
         { 
           name: '👥 Players', 
@@ -72,21 +77,40 @@ export async function execute(interaction: ChatInputCommandInteraction) {
           inline: true 
         },
         { 
-          name: '⏱️ Uptime', 
-          value: uptimeText, 
+          name: '⏱️ Last Seen', 
+          value: lastSeenText, 
           inline: true 
         },
         { 
           name: '📡 OneSync', 
-          value: server.oneSync || server.onesyncEnabled ? 'Enabled' : 'Disabled', 
+          value: server.onesyncEnabled ? 'Enabled' : 'Disabled', 
           inline: true 
         },
-        { 
-          name: '🔐 Private Slots', 
-          value: server.privateClients?.toString() || '0', 
-          inline: true 
+        {
+          name: '🔒 Private',
+          value: server.isPrivate ? 'Yes' : 'No',
+          inline: true
+        },
+        {
+          name: '️ CFX Code',
+          value: `\`${server.endpoint}\` ([Join](https://cfx.re/join/${server.endpoint}))`,
+          inline: true
+        },
+        {
+          name: '🛠️ Server Version',
+          value: server.version || 'Unknown',
+          inline: false
         }
       );
+
+    // Add tags if available
+    if (server.tags.length > 0) {
+      embed.addFields({
+        name: '🏷️ Tags',
+        value: server.tags.map(t => `\`${t}\``).join(', '),
+        inline: false
+      });
+    }
 
     // Add player list if there are players
     if (players.length > 0) {
@@ -111,7 +135,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     }
 
     // Add first 15 resources if available
-    if (server.resources && server.resources.length > 0) {
+    if (server.resources.length > 0) {
       const resourceList = server.resources
         .slice(0, 15)
         .map((r: string) => `\`${r}\``)
@@ -120,21 +144,29 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       const moreText = server.resources.length > 15 ? ` +${server.resources.length - 15} more` : '';
 
       embed.addFields({
-        name: '📦 Resources',
+        name: `📦 Resources (${server.resources.length})`,
         value: resourceList + moreText,
         inline: false
       });
     }
 
+    // Set owner info & banner
+    if (server.bannerUrl) {
+      embed.setImage(server.bannerUrl);
+    }
+    if (server.ownerAvatar) {
+      embed.setThumbnail(server.ownerAvatar);
+    }
+
     embed
-      .setFooter({ text: `Requested by ${interaction.user.tag} | Server ID: ${serverIdentifier}` })
+      .setFooter({ text: `Owner: ${server.ownerName} • Requested by ${interaction.user.tag}` })
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
 
     logger.debug('Fetched FiveM server info', {
       context: 'FiveM',
-      serverIdentifier,
+      cfxCode: server.endpoint,
       players: server.clients,
     });
   } catch (err) {

@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { getFiveMServerResources, parseFiveMServerIdentifier } from '../../lib/gameServer';
 import { logger } from '../../lib/logger';
 
@@ -8,8 +8,15 @@ export const data = new SlashCommandBuilder()
   .addStringOption(option =>
     option
       .setName('server')
-      .setDescription('Server identifier (IP:port, hostname:port, CFX UUID, or cfx.re/join/... URL)')
+      .setDescription('CFX join code (e.g. pmdoa5) or cfx.re/join URL')
       .setRequired(true)
+  )
+  .addIntegerOption(option =>
+    option
+      .setName('page')
+      .setDescription('Page number to start on')
+      .setMinValue(1)
+      .setRequired(false)
   )
   .setDMPermission(false);
 
@@ -25,7 +32,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         new EmbedBuilder()
           .setColor(0xFF5555)
           .setTitle('Invalid Server Identifier')
-          .setDescription('Please provide a valid server IP:port, hostname:port, CFX UUID, or cfx.re/join URL.')
+          .setDescription(
+            'Please provide a valid CFX join code or `cfx.re/join/...` URL.\n\n' +
+            '**Examples:**\n' +
+            '• `/fivemresources pmdoa5`\n' +
+            '• `/fivemresources https://cfx.re/join/pmdoa5`'
+          )
       ]
     });
     return;
@@ -46,32 +58,112 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       return;
     }
 
-    // Create pages for resources (50 per embed)
-    const itemsPerPage = 50;
-    const pages = [];
+    // Build pages (25 resources per page for readability)
+    const itemsPerPage = 25;
+    const totalPages = Math.ceil(resources.length / itemsPerPage);
 
-    for (let i = 0; i < resources.length; i += itemsPerPage) {
-      const pageResources = resources.slice(i, i + itemsPerPage);
+    function buildPage(pageIndex: number): EmbedBuilder {
+      const start = pageIndex * itemsPerPage;
+      const pageResources = resources!.slice(start, start + itemsPerPage);
       const resourceList = pageResources
-        .map((r: string, idx: number) => `${i + idx + 1}. \`${r}\``)
+        .map((r: string, idx: number) => `\`${start + idx + 1}.\` ${r}`)
         .join('\n');
 
-      const page = new EmbedBuilder()
+      return new EmbedBuilder()
         .setColor(0x3256d9)
-        .setTitle(`📦 FiveM Server Resources - Page ${Math.floor(i / itemsPerPage) + 1}`)
+        .setTitle(`📦 Server Resources — ${serverIdentifier}`)
         .setDescription(resourceList)
-        .setFooter({ 
-          text: `Total: ${resources.length} resources | Page ${Math.floor(i / itemsPerPage) + 1}/${Math.ceil(resources.length / itemsPerPage)}` 
+        .setFooter({
+          text: `Page ${pageIndex + 1} of ${totalPages} • ${resources!.length} total resources`,
         })
         .setTimestamp();
-
-      pages.push(page);
     }
 
-    // Send first page
-    await interaction.editReply({ 
-      embeds: [pages[0]],
-      content: pages.length > 1 ? `Showing page 1 of ${pages.length}. This server has ${resources.length} total resources.` : undefined
+    function buildButtons(pageIndex: number): ActionRowBuilder<ButtonBuilder> {
+      return new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId('res_first')
+          .setEmoji('⏮')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(pageIndex === 0),
+        new ButtonBuilder()
+          .setCustomId('res_prev')
+          .setEmoji('◀')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(pageIndex === 0),
+        new ButtonBuilder()
+          .setCustomId('res_page')
+          .setLabel(`${pageIndex + 1} / ${totalPages}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true),
+        new ButtonBuilder()
+          .setCustomId('res_next')
+          .setEmoji('▶')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(pageIndex === totalPages - 1),
+        new ButtonBuilder()
+          .setCustomId('res_last')
+          .setEmoji('⏭')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(pageIndex === totalPages - 1),
+      );
+    }
+
+    // Determine starting page
+    const requestedPage = interaction.options.getInteger('page');
+    let currentPage = requestedPage ? Math.min(Math.max(requestedPage - 1, 0), totalPages - 1) : 0;
+
+    const message = await interaction.editReply({
+      embeds: [buildPage(currentPage)],
+      components: totalPages > 1 ? [buildButtons(currentPage)] : [],
+    });
+
+    // No pagination needed for single page
+    if (totalPages <= 1) return;
+
+    // Collect button interactions for 3 minutes
+    const collector = message.createMessageComponentCollector({
+      componentType: ComponentType.Button,
+      filter: (i) => i.user.id === interaction.user.id,
+      time: 180_000,
+    });
+
+    collector.on('collect', async (btnInteraction) => {
+      switch (btnInteraction.customId) {
+        case 'res_first':
+          currentPage = 0;
+          break;
+        case 'res_prev':
+          currentPage = Math.max(0, currentPage - 1);
+          break;
+        case 'res_next':
+          currentPage = Math.min(totalPages - 1, currentPage + 1);
+          break;
+        case 'res_last':
+          currentPage = totalPages - 1;
+          break;
+      }
+
+      await btnInteraction.update({
+        embeds: [buildPage(currentPage)],
+        components: [buildButtons(currentPage)],
+      });
+    });
+
+    collector.on('end', async () => {
+      // Disable all buttons when collector expires
+      try {
+        const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId('res_first').setEmoji('⏮').setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder().setCustomId('res_prev').setEmoji('◀').setStyle(ButtonStyle.Primary).setDisabled(true),
+          new ButtonBuilder().setCustomId('res_page').setLabel(`${currentPage + 1} / ${totalPages}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder().setCustomId('res_next').setEmoji('▶').setStyle(ButtonStyle.Primary).setDisabled(true),
+          new ButtonBuilder().setCustomId('res_last').setEmoji('⏭').setStyle(ButtonStyle.Secondary).setDisabled(true),
+        );
+        await interaction.editReply({ components: [disabledRow] });
+      } catch {
+        // Message may have been deleted
+      }
     });
 
     logger.debug('Fetched FiveM server resources', {
