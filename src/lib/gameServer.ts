@@ -23,41 +23,47 @@ export interface GameServerInfo {
 export async function queryMinecraftServer(host: string, port: number = 25565): Promise<GameServerInfo | null> {
   try {
     const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     
-    // Try to connect to the server status API
-    const response = await fetch(`https://api.mcsrvstat.us/3/${host}:${port}`, {
-      timeout: 5000,
-    });
+    try {
+      // Try to connect to the server status API
+      const response = await fetch(`https://api.mcsrvstat.us/3/${host}:${port}`, {
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      return null;
-    }
+      if (!response.ok) {
+        return null;
+      }
 
-    const data = await response.json() as any;
-    const responseTime = Date.now() - start;
+      const data = await response.json() as any;
+      const responseTime = Date.now() - start;
 
-    if (!data.online) {
+      if (!data.online) {
+        return {
+          hostname: host,
+          players: 0,
+          maxPlayers: 0,
+          gameType: 'Minecraft',
+          online: false,
+          responseTime,
+        };
+      }
+
       return {
-        hostname: host,
-        players: 0,
-        maxPlayers: 0,
+        hostname: data.hostname || host,
+        players: data.players?.online || 0,
+        maxPlayers: data.players?.max || 0,
         gameType: 'Minecraft',
-        online: false,
+        version: data.version || 'Unknown',
+        motd: data.motd?.clean?.[0] || 'No MOTD',
+        map: data.map || 'Unknown',
+        online: true,
         responseTime,
       };
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return {
-      hostname: data.hostname || host,
-      players: data.players?.online || 0,
-      maxPlayers: data.players?.max || 0,
-      gameType: 'Minecraft',
-      version: data.version || 'Unknown',
-      motd: data.motd?.clean?.[0] || 'No MOTD',
-      map: data.map || 'Unknown',
-      online: true,
-      responseTime,
-    };
   } catch (err) {
     logger.debug('Failed to query Minecraft server', {
       context: 'GameServer',
@@ -75,32 +81,38 @@ export async function queryMinecraftServer(host: string, port: number = 25565): 
 export async function queryRustServer(serverId: string): Promise<GameServerInfo | null> {
   try {
     const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(`https://api.battlemetrics.com/servers/${serverId}`, {
-      headers: {
-        'User-Agent': 'NodeByte-GameServer-Bot/1.0',
-      },
-      timeout: 5000,
-    });
+    try {
+      const response = await fetch(`https://api.battlemetrics.com/servers/${serverId}`, {
+        headers: {
+          'User-Agent': 'NodeByte-GameServer-Bot/1.0',
+        },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      return null;
-    }
+      if (!response.ok) {
+        return null;
+      }
 
-    const data = await response.json() as any;
-    const responseTime = Date.now() - start;
-    const serverData = data.data;
+      const data = await response.json() as any;
+      const responseTime = Date.now() - start;
+      const serverData = data.data;
 
-    return {
+      return {
       hostname: serverData.attributes.name,
       players: serverData.attributes.players || 0,
       maxPlayers: serverData.attributes.maxPlayers || 0,
       gameType: 'Rust',
       version: serverData.attributes.details?.rust?.version || 'Unknown',
       map: serverData.attributes.details?.map || serverData.attributes.details?.rust?.map || 'Unknown',
-      online: serverData.attributes.status === 'online',
-      responseTime,
-    };
+        online: serverData.attributes.status === 'online',
+        responseTime,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (err) {
     logger.debug('Failed to query Rust server', {
       context: 'GameServer',
@@ -119,39 +131,45 @@ export async function queryRustServer(serverId: string): Promise<GameServerInfo 
 export async function queryHytaleServer(host: string, port: number = 12345): Promise<GameServerInfo | null> {
   try {
     const start = Date.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
 
-    // Try status API if available
-    const response = await fetch(`https://${host}:${port}/status`, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'NodeByte-GameServer-Bot/1.0',
-      },
-      timeout: 5000,
-    });
+    try {
+      // Try status API if available
+      const response = await fetch(`https://${host}:${port}/status`, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'NodeByte-GameServer-Bot/1.0',
+        },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        return {
+          hostname: host,
+          players: 0,
+          maxPlayers: 0,
+          gameType: 'Hytale',
+          online: false,
+        };
+      }
+
+      const data = await response.json() as any;
+      const responseTime = Date.now() - start;
+
       return {
-        hostname: host,
-        players: 0,
-        maxPlayers: 0,
-        gameType: 'Hytale',
-        online: false,
-      };
-    }
-
-    const data = await response.json() as any;
-    const responseTime = Date.now() - start;
-
-    return {
       hostname: host,
       players: data.players || 0,
       maxPlayers: data.maxPlayers || data.max_players || 0,
       gameType: 'Hytale',
       version: data.version || 'Unknown',
       map: data.map || data.world || 'Unknown',
-      online: true,
-      responseTime,
-    };
+        online: true,
+        responseTime,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   } catch (err) {
     logger.debug('Failed to query Hytale server', {
       context: 'GameServer',

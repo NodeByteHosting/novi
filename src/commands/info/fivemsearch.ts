@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { searchFiveMServers, FiveMServer } from '../lib/gameServer';
-import { logger } from '../lib/logger';
+import { searchFiveMServers, FiveMServer } from '../../lib/gameServer';
+import { logger } from '../../lib/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('fivemsearch')

@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { queryHytaleServer, parseGameServerIdentifier } from '../lib/gameServer';
-import { logger } from '../lib/logger';
+import { queryHytaleServer, parseGameServerIdentifier } from '../../lib/gameServer';
+import { logger } from '../../lib/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('hytaleserver')

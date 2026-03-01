@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { queryRustServer } from '../lib/gameServer';
-import { logger } from '../lib/logger';
+import { queryRustServer } from '../../lib/gameServer';
+import { logger } from '../../lib/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('rustserver')

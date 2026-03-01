@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { getFiveMServerResources, parseFiveMServerIdentifier } from '../lib/gameServer';
-import { logger } from '../lib/logger';
+import { getFiveMServerResources, parseFiveMServerIdentifier } from '../../lib/gameServer';
+import { logger } from '../../lib/logger';
 
 export const data = new SlashCommandBuilder()
   .setName('fivemresources')
