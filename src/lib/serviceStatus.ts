@@ -24,10 +24,8 @@ interface WebServiceStatus extends ServiceStatus {
  */
 async function pingGameServer(name: string, ip: string): Promise<GameServerStatus> {
   try {
-    const platform = process.platform;
-    const pingCmd = platform === 'win32' 
-      ? `ping -n 1 -w 1000 ${ip}` 
-      : `ping -c 1 -W 1000 ${ip}`;
+    // Use Linux ping command (for Ubuntu/Linux systems)
+    const pingCmd = `ping -c 1 -W 1000 ${ip}`;
     
     const start = Date.now();
     await execAsync(pingCmd);
