@@ -1,0 +1,29 @@
+{
+  "name": "novi",
+  "version": "0.1.0",
+  "description": "The official support bot for NodeByte, built with Discord.js and Prisma.",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.8.0",
+    "@types/express": "^5.0.6",
+    "crypto": "^1.0.1",
+    "discord.js": "^14.25.1",
+    "dotenv": "^16.0.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.5.0",
+    "prisma": "^5.8.0"
+  }
+}

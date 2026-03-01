@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model ModerationLog {
+  id           Int      @id @default(autoincrement())
+  guildId      String   @map("guild_id")
+  action       String
+  moderatorId  String   @map("moderator_id")
+  targetId     String   @map("target_id")
+  reason       String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("moderation_logs")
+}
+
+model Warning {
+  id          Int      @id @default(autoincrement())
+  guildId     String   @map("guild_id")
+  userId      String   @map("user_id")
+  moderatorId String   @map("moderator_id")
+  reason      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("warnings")
+}
+
+model Ticket {
+  id          Int      @id @default(autoincrement())
+  guildId     String   @map("guild_id")
+  threadId    String   @unique @map("thread_id")
+  userId      String   @map("user_id")
+  category    String
+  status      String   @default("open")
+  claimedBy   String?  @map("claimed_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  closedAt    DateTime? @map("closed_at")
+  closedBy    String?  @map("closed_by")
+  closeReason String?  @map("close_reason")
+
+  @@map("tickets")
+  @@index([guildId])
+  @@index([userId])
+  @@index([status])
+}
+
+model GuildConfig {
+  id              Int     @id @default(autoincrement())
+  guildId         String  @unique @map("guild_id")
+  logsChannelId   String? @map("logs_channel_id")
+  ticketChannelId String? @map("ticket_channel_id")
+  ticketLogChannelId String? @map("ticket_log_channel_id")
+  ticketMessageId String? @map("ticket_message_id")
+  supportRoleId   String? @map("support_role_id")
+  memberRoleId    String? @map("member_role_id")
+  botRoleId       String? @map("bot_role_id")
+  welcomeChannelId String? @map("welcome_channel_id")
+  disableSupportNotifications Boolean @default(false) @map("disable_support_notifications")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("guild_configs")
+}
+
+model Transcript {
+  id          Int      @id @default(autoincrement())
+  guildId     String   @map("guild_id")
+  ticketId    String   @unique @map("ticket_id")
+  threadId    String   @map("thread_id")
+  userId      String   @map("user_id")
+  category    String
+  slug        String   @unique // URL-safe slug for accessing the transcript
+  htmlContent String   @db.Text // HTML content of the transcript
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@map("transcripts")
+  @@index([guildId])
+  @@index([slug])
+  @@index([userId])
+}
