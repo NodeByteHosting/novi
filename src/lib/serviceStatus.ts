@@ -1,8 +1,9 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import net from 'net';
+import dns from 'dns/promises';
 import { logger } from './logger';
 
-const execAsync = promisify(exec);
+// Custom user agent for service monitoring - can be whitelisted in Cloudflare
+const SERVICE_MONITOR_USER_AGENT = 'NodeByte-ServiceMonitor/1.0 (+https://nodebyte.host)';
 
 interface ServiceStatus {
   name: string;
@@ -20,18 +21,95 @@ interface WebServiceStatus extends ServiceStatus {
 }
 
 /**
- * Ping a game server IP to check if it's online
+ * Try to resolve hostname via DNS
+ */
+async function checkDNS(ip: string): Promise<boolean> {
+  try {
+    // Try to resolve the IP - this tests basic network connectivity
+    const result = await dns.reverse(ip);
+    return result.length > 0;
+  } catch {
+    // Even if reverse DNS fails, it means the host is reachable
+    return true;
+  }
+}
+
+/**
+ * Try to connect to a port on the game server
+ * Accepts both IP addresses and hostnames (including reverse DNS)
+ */
+async function checkTCPConnection(ip: string, port: number = 25565): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const timeout = 2000;
+
+    socket.setTimeout(timeout);
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on('error', () => {
+      resolve(false);
+    });
+
+    socket.connect(port, ip);
+  });
+}
+
+/**
+ * Ping a game server IP or hostname to check if it's online
+ * Supports both IP addresses and hostnames (including reverse DNS from Hetzner, etc)
  */
 async function pingGameServer(name: string, ip: string): Promise<GameServerStatus> {
   try {
-    // Use Linux ping command (for Ubuntu/Linux systems)
-    const pingCmd = `ping -c 1 -W 1000 ${ip}`;
-    
     const start = Date.now();
-    await execAsync(pingCmd);
+    
+    // Try multiple methods to check if server is online
+    // Method 1: Try TCP connection (most reliable in containers)
+    const tcpSuccess = await checkTCPConnection(ip);
+    
+    if (tcpSuccess) {
+      const responseTime = Date.now() - start;
+      logger.debug(`Game server online (TCP check)`, {
+        context: 'ServiceStatus',
+        server: name,
+        ip,
+        responseTime,
+      });
+      
+      return {
+        name,
+        ip,
+        status: 'online',
+        responseTime,
+      };
+    }
+    
+    // Method 2: Try DNS reverse lookup as fallback
+    const dnsSuccess = await checkDNS(ip);
     const responseTime = Date.now() - start;
     
-    logger.debug(`Game server ping successful`, {
+    if (dnsSuccess) {
+      logger.debug(`Game server online (DNS check)`, {
+        context: 'ServiceStatus',
+        server: name,
+        ip,
+        responseTime,
+      });
+      
+      return {
+        name,
+        ip,
+        status: 'online',
+        responseTime,
+      };
+    }
+    
+    logger.debug(`Game server offline`, {
       context: 'ServiceStatus',
       server: name,
       ip,
@@ -41,11 +119,10 @@ async function pingGameServer(name: string, ip: string): Promise<GameServerStatu
     return {
       name,
       ip,
-      status: 'online',
-      responseTime,
+      status: 'offline',
     };
   } catch (err) {
-    logger.debug(`Game server ping failed`, {
+    logger.debug(`Game server check error`, {
       context: 'ServiceStatus',
       server: name,
       ip,
@@ -73,12 +150,8 @@ async function checkWebService(name: string, url: string): Promise<WebServiceSta
       method: 'GET',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': SERVICE_MONITOR_USER_AGENT,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Encoding': 'gzip, deflate',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
       },
     });
     const responseTime = Date.now() - start;
@@ -122,41 +195,55 @@ async function checkWebService(name: string, url: string): Promise<WebServiceSta
  */
 export async function checkAllServices(): Promise<{
   gameServers: GameServerStatus[];
+  dedicatedServers: GameServerStatus[];
   webServices: WebServiceStatus[];
   timestamp: Date;
 }> {
   try {
-    // Game servers to check
+    // Build game servers list from environment variables
     const gameServers = [
-      { name: 'Minecraft Newcastle 1', ip: process.env.MINECRAFT_NEWCASTLE_1_IP || '45.85.88.74' },
-      { name: 'Rust Newcastle 1', ip: process.env.RUST_NEWCASTLE_1_IP || '45.85.88.74' },
-      { name: 'Hytale Newcastle 1', ip: process.env.HYTALE_NEWCASTLE_1_IP || '45.85.88.74' },
+      ...(process.env.NB_NEWCASTLE1_IP 
+        ? [{ name: 'NB-NEWCASTLE1', ip: process.env.NB_NEWCASTLE1_IP }]
+        : []
+      ),
+    ];
+
+    // Build dedicated servers list from environment variables
+    const dedicatedServers = [
+      ...(process.env.NB_OMNI_FALKENSTEIN_IP 
+        ? [{ name: 'NB-OMNI-FALKENSTEIN', ip: process.env.NB_OMNI_FALKENSTEIN_IP }]
+        : []
+      ),
     ];
 
     // Web services to check
     const webServices = [
       { name: 'Website', url: process.env.WEBSITE_URL || 'https://nodebyte.host' },
-      { name: 'Backend', url: process.env.BACKEND_URL || 'https://core.nodebyte.host' },
+      { name: 'Backend', url: process.env.BACKEND_URL || 'https://core.nodebyte.host/health' },
       { name: 'Billing Panel', url: process.env.BILLING_URL || 'https://billing.nodebyte.host' },
       { name: 'Game Panel', url: process.env.GAME_PANEL_URL || 'https://panel.nodebyte.host' },
     ];
 
     // Check all services in parallel
-    const [gameServerResults, webServiceResults] = await Promise.all([
+    const [gameServerResults, dedicatedServerResults, webServiceResults] = await Promise.all([
       Promise.all(gameServers.map(server => pingGameServer(server.name, server.ip))),
+      Promise.all(dedicatedServers.map(server => pingGameServer(server.name, server.ip))),
       Promise.all(webServices.map(service => checkWebService(service.name, service.url))),
     ]);
 
     logger.info('Service status check completed', {
       context: 'ServiceStatus',
       gameServersChecked: gameServerResults.length,
+      dedicatedServersChecked: dedicatedServerResults.length,
       webServicesChecked: webServiceResults.length,
       gameServersOnline: gameServerResults.filter(s => s.status === 'online').length,
+      dedicatedServersOnline: dedicatedServerResults.filter(s => s.status === 'online').length,
       webServicesOnline: webServiceResults.filter(s => s.status === 'online').length,
     });
 
     return {
       gameServers: gameServerResults,
+      dedicatedServers: dedicatedServerResults,
       webServices: webServiceResults,
       timestamp: new Date(),
     };
@@ -168,6 +255,7 @@ export async function checkAllServices(): Promise<{
 
     return {
       gameServers: [],
+      dedicatedServers: [],
       webServices: [],
       timestamp: new Date(),
     };
@@ -177,14 +265,22 @@ export async function checkAllServices(): Promise<{
 /**
  * Format service status for display
  */
-export function formatServiceStatus(gameServers: GameServerStatus[], webServices: WebServiceStatus[]): string {
+export function formatServiceStatus(gameServers: GameServerStatus[], dedicatedServers: GameServerStatus[], webServices: WebServiceStatus[]): string {
   const gameServerText = gameServers
     .map(s => {
       const status = s.status === 'online' ? '✓' : '✗';
       const time = s.responseTime ? ` (${s.responseTime}ms)` : '';
       return `${status} ${s.name}${time}`;
     })
-    .join('\n');
+    .join('\n') || 'None';
+
+  const dedicatedServerText = dedicatedServers
+    .map(s => {
+      const status = s.status === 'online' ? '✓' : '✗';
+      const time = s.responseTime ? ` (${s.responseTime}ms)` : '';
+      return `${status} ${s.name}${time}`;
+    })
+    .join('\n') || 'None';
 
   const webServiceText = webServices
     .map(s => {
@@ -195,5 +291,5 @@ export function formatServiceStatus(gameServers: GameServerStatus[], webServices
     })
     .join('\n');
 
-  return `**Game Servers:**\n${gameServerText}\n\n**Web Services:**\n${webServiceText}`;
+  return `**Game Servers:**\n${gameServerText}\n\n**Dedicated Servers:**\n${dedicatedServerText}\n\n**Web Services:**\n${webServiceText}`;
 }
