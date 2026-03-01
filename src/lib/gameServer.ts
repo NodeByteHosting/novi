@@ -338,6 +338,12 @@ export function parseGameServerIdentifier(input: string, defaultPort: number): {
  * Parse FiveM server identifier from various input formats
  */
 export function parseFiveMServerIdentifier(input: string): string | null {
+  // Handle CFX.re/join URLs (https://cfx.re/join/xxx or cfx.re/join/xxx)
+  const urlMatch = input.match(/(?:https?:\/\/)?cfx\.re\/join\/([a-zA-Z0-9]+)/i);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+
   // Handle IP:port format
   if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(input)) {
     return input;
