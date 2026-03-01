@@ -195,55 +195,56 @@ async function checkWebService(name: string, url: string): Promise<WebServiceSta
  */
 export async function checkAllServices(): Promise<{
   gameServers: GameServerStatus[];
-  dedicatedServers: GameServerStatus[];
+  clientServices: GameServerStatus[];
   webServices: WebServiceStatus[];
   timestamp: Date;
 }> {
   try {
-    // Build game servers list from environment variables
-    const gameServers = [
-      ...(process.env.NB_NEWCASTLE1_IP 
-        ? [{ name: 'NB-NEWCASTLE1', ip: process.env.NB_NEWCASTLE1_IP }]
-        : []
-      ),
-    ];
+    // Parse services config from JSON environment variable
+    let gameServers: Array<{ name: string; ip: string }> = [];
+    let clientServices: Array<{ name: string; ip: string }> = [];
+    let webServices: Array<{ name: string; url: string }> = [];
 
-    // Build dedicated servers list from environment variables
-    const dedicatedServers = [
-      ...(process.env.NB_OMNI_FALKENSTEIN_IP 
-        ? [{ name: 'NB-OMNI-FALKENSTEIN', ip: process.env.NB_OMNI_FALKENSTEIN_IP }]
-        : []
-      ),
-    ];
+    if (process.env.SERVICES_CONFIG) {
+      try {
+        const config = JSON.parse(process.env.SERVICES_CONFIG);
+        gameServers = config.gameServers || [];
+        clientServices = config.clientServices || [];
+        webServices = config.webServices || [];
+      } catch (parseErr) {
+        logger.error('Failed to parse SERVICES_CONFIG JSON', {
+          context: 'ServiceStatus',
+          error: parseErr instanceof Error ? parseErr.message : String(parseErr),
+        });
+      }
+    }
 
-    // Web services to check
-    const webServices = [
-      { name: 'Website', url: process.env.WEBSITE_URL || 'https://nodebyte.host' },
-      { name: 'Backend', url: process.env.BACKEND_URL || 'https://core.nodebyte.host/health' },
-      { name: 'Billing Panel', url: process.env.BILLING_URL || 'https://billing.nodebyte.host' },
-      { name: 'Game Panel', url: process.env.GAME_PANEL_URL || 'https://panel.nodebyte.host' },
-    ];
+    if (gameServers.length === 0 && clientServices.length === 0 && webServices.length === 0) {
+      logger.warn('No services configured - check SERVICES_CONFIG environment variable', {
+        context: 'ServiceStatus',
+      });
+    }
 
     // Check all services in parallel
-    const [gameServerResults, dedicatedServerResults, webServiceResults] = await Promise.all([
+    const [gameServerResults, clientServiceResults, webServiceResults] = await Promise.all([
       Promise.all(gameServers.map(server => pingGameServer(server.name, server.ip))),
-      Promise.all(dedicatedServers.map(server => pingGameServer(server.name, server.ip))),
+      Promise.all(clientServices.map(server => pingGameServer(server.name, server.ip))),
       Promise.all(webServices.map(service => checkWebService(service.name, service.url))),
     ]);
 
     logger.info('Service status check completed', {
       context: 'ServiceStatus',
       gameServersChecked: gameServerResults.length,
-      dedicatedServersChecked: dedicatedServerResults.length,
+      clientServicesChecked: clientServiceResults.length,
       webServicesChecked: webServiceResults.length,
       gameServersOnline: gameServerResults.filter(s => s.status === 'online').length,
-      dedicatedServersOnline: dedicatedServerResults.filter(s => s.status === 'online').length,
+      clientServicesOnline: clientServiceResults.filter(s => s.status === 'online').length,
       webServicesOnline: webServiceResults.filter(s => s.status === 'online').length,
     });
 
     return {
       gameServers: gameServerResults,
-      dedicatedServers: dedicatedServerResults,
+      clientServices: clientServiceResults,
       webServices: webServiceResults,
       timestamp: new Date(),
     };
@@ -255,7 +256,7 @@ export async function checkAllServices(): Promise<{
 
     return {
       gameServers: [],
-      dedicatedServers: [],
+      clientServices: [],
       webServices: [],
       timestamp: new Date(),
     };
@@ -265,7 +266,7 @@ export async function checkAllServices(): Promise<{
 /**
  * Format service status for display
  */
-export function formatServiceStatus(gameServers: GameServerStatus[], dedicatedServers: GameServerStatus[], webServices: WebServiceStatus[]): string {
+export function formatServiceStatus(gameServers: GameServerStatus[], clientServices: GameServerStatus[], webServices: WebServiceStatus[]): string {
   const gameServerText = gameServers
     .map(s => {
       const status = s.status === 'online' ? '✓' : '✗';
@@ -274,7 +275,7 @@ export function formatServiceStatus(gameServers: GameServerStatus[], dedicatedSe
     })
     .join('\n') || 'None';
 
-  const dedicatedServerText = dedicatedServers
+  const clientServiceText = clientServices
     .map(s => {
       const status = s.status === 'online' ? '✓' : '✗';
       const time = s.responseTime ? ` (${s.responseTime}ms)` : '';
@@ -291,5 +292,5 @@ export function formatServiceStatus(gameServers: GameServerStatus[], dedicatedSe
     })
     .join('\n');
 
-  return `**Game Servers:**\n${gameServerText}\n\n**Dedicated Servers:**\n${dedicatedServerText}\n\n**Web Services:**\n${webServiceText}`;
+  return `**Game Servers:**\n${gameServerText}\n\n**Client Services:**\n${clientServiceText}\n\n**Web Services:**\n${webServiceText}`;
 }

@@ -12,13 +12,13 @@ export default async (message: Message, args: string[]) => {
   const checkingMessage = await message.reply(`${pingText}Checking service status...`);
 
   try {
-    const { gameServers, dedicatedServers, webServices, timestamp } = await checkAllServices();
+    const { gameServers, clientServices, webServices, timestamp } = await checkAllServices();
 
     const gameServersOnline = gameServers.filter(s => s.status === 'online').length;
-    const dedicatedServersOnline = dedicatedServers.filter(s => s.status === 'online').length;
+    const clientServicesOnline = clientServices.filter(s => s.status === 'online').length;
     const webServicesOnline = webServices.filter(s => s.status === 'online').length;
-    const totalOnline = gameServersOnline + dedicatedServersOnline + webServicesOnline;
-    const totalServices = gameServers.length + dedicatedServers.length + webServices.length;
+    const totalOnline = gameServersOnline + clientServicesOnline + webServicesOnline;
+    const totalServices = gameServers.length + clientServices.length + webServices.length;
 
     // Determine color based on status
     const allOnline = totalOnline === totalServices;
@@ -33,13 +33,13 @@ export default async (message: Message, args: string[]) => {
       })
       .join('\n') || 'No game servers configured';
 
-    const dedicatedServerText = dedicatedServers
+    const dedicatedServerText = clientServices
       .map(s => {
         const status = s.status === 'online' ? '✓' : '✗';
         const time = s.responseTime ? ` (${s.responseTime}ms)` : '';
         return `${status} ${s.name}${time}`;
       })
-      .join('\n') || 'No dedicated servers configured';
+      .join('\n') || 'No client services configured';
 
     const webServiceText = webServices
       .map(s => {
@@ -55,7 +55,7 @@ export default async (message: Message, args: string[]) => {
       .setTitle('NodeByte Service Status')
       .addFields(
         { name: 'Game Servers', value: gameServerText, inline: false },
-        { name: 'Dedicated Servers', value: dedicatedServerText, inline: false },
+        { name: 'Client Services', value: dedicatedServerText, inline: false },
         { name: 'Web Services', value: webServiceText || 'No services to check', inline: false },
         { name: 'Overall Status', 
           value: `${totalOnline}/${totalServices} services online`,

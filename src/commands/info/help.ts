@@ -11,8 +11,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
 
   // Categorize commands
   const categories: Record<string, any[]> = {
-    'ℹ️ Information': [],
-    '🛡️ Moderation': [],
+    'ℹ️ Information': [],    '🎮 Game Servers': [],    '🛡️ Moderation': [],
     '⚙️ Admin': [],
     '� Fun': [],
     '🎫 Tickets': [],
@@ -25,9 +24,11 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // Categorize based on command name or folder
     if (['help', 'ping', 'botinfo', 'serverinfo', 'userinfo', 'uptime', 'roleinfo', 'channelinfo', 'links'].includes(name)) {
       categories['ℹ️ Information'].push(cmd);
-    } else if (['ban', 'kick', 'warn', 'warnings', 'case', 'unban', 'purge'].includes(name)) {
+    } else if (['fivemserver', 'fivemsearch', 'fivemresources', 'mcserver', 'rustserver', 'hytaleserver'].includes(name)) {
+      categories['🎮 Game Servers'].push(cmd);
+    } else if (['ban', 'kick', 'warn', 'warnings', 'case', 'unban', 'purge', 'timeout', 'malwarefilter'].includes(name)) {
       categories['🛡️ Moderation'].push(cmd);
-    } else if (['reactionrole'].includes(name)) {
+    } else if (['reactionrole', 'config', 'setuptickets', 'addroles'].includes(name)) {
       categories['⚙️ Admin'].push(cmd);
     } else if (['8ball', 'coinflip', 'roll', 'avatar', 'hug', 'meme', 'joke'].includes(name)) {
       categories['🎉 Fun'].push(cmd);
@@ -42,7 +43,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     .setDescription('Here are all available commands. Use `/command` to execute.')
     .setThumbnail(interaction.client.user?.displayAvatarURL() || '')
     .setTimestamp()
-    .setFooter({ text: `Requested by ${interaction.user.tag} | \u00a9Copyright 2024 - 2025 NodeByte LTD`, iconURL: interaction.user.displayAvatarURL() });
+    .setFooter({ text: `Requested by ${interaction.user.tag} | ©Copyright 2024 - 2026 NodeByte LTD`, iconURL: interaction.user.displayAvatarURL() });
 
   // Add fields for each category
   for (const [category, cmds] of Object.entries(categories)) {

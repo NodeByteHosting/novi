@@ -7,16 +7,33 @@ export default async (client: Client) => {
     context: 'ReadyEvent'
   });
   
-  // Set bot status
+  // Set up rotating bot status
+  const statuses = [
+    { name: 'NodeByte Services', type: ActivityType.Watching },
+    { name: 'support tickets', type: ActivityType.Listening },
+    { name: 'FiveM servers', type: ActivityType.Watching },
+    { name: '/help for commands', type: ActivityType.Playing },
+    { name: 'NodeByte grow', type: ActivityType.Watching },
+    { name: 'for moderation', type: ActivityType.Listening },
+    { name: 'service statuses', type: ActivityType.Watching },
+    { name: 'support requests', type: ActivityType.Listening },
+  ];
+
+  // Set initial random status
+  const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
   client.user?.setPresence({
-    activities: [
-      {
-        name: 'NodeByte Services',
-        type: ActivityType.Watching
-      }
-    ],
-    status: 'idle'
+    activities: [randomStatus],
+    status: 'dnd'
   });
+
+  // Rotate status every 30 seconds
+  setInterval(() => {
+    const status = statuses[Math.floor(Math.random() * statuses.length)];
+    client.user?.setPresence({
+      activities: [status],
+      status: 'online'
+    });
+  }, 30 * 1000);
 
   // Send ready embed to logs channel
   for (const [guildId, guild] of client.guilds.cache) {
