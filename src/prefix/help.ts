@@ -17,6 +17,11 @@ export default async (message: Message, args: string[]) => {
         inline: false
       },
       {
+        name: '🔍 Service Monitoring',
+        value: '**!services** - Check NodeByte infrastructure status (game servers, web services)',
+        inline: false
+      },
+      {
         name: '🔧 Server Configuration',
         value: '**!java** - Java version requirements per MC version\n**!update** - Update Minecraft server version\n**!mods** - Install and manage mods\n**!plugins** - Install and manage plugins',
         inline: false

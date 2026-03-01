@@ -11,11 +11,11 @@ export default async (client: Client) => {
   client.user?.setPresence({
     activities: [
       {
-        name: '/help | NodeByte Services',
+        name: 'NodeByte Services',
         type: ActivityType.Watching
       }
     ],
-    status: 'online'
+    status: 'idle'
   });
 
   // Send ready embed to logs channel
