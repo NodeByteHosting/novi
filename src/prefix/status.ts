@@ -10,12 +10,12 @@ export default async (message: Message, args: string[]) => {
   await message.reply(`${pingText}**NodeByte Services Status**
 
 **Check Server Status:**
-- **Status Page**: https://status.nodebyte.host
+- **Status Page**: <https://nodebytestat.us>
 - **Real-time updates** on all NodeByte services
 - Incidents reported within 5 minutes
 
 **Your Server Status:**
-- Open **game panel**: https://billing.nodebyte.host
+- Open **game panel**: <https://billing.nodebyte.host>
 - Click your server → view "Online" / "Offline" status
 - See player count, CPU/RAM usage, uptime
 
@@ -32,7 +32,7 @@ export default async (message: Message, args: string[]) => {
 - Automatic restarts happen at set times (if enabled)
 
 **Reporting an Outage:**
-- If NodeByte infrastructure is down, check status.nodebyte.host
+- If NodeByte infrastructure is down, check nodebytestat.us
 - Already reported? No action needed, we're working on it
 - Not listed? Create a support ticket with details
 
