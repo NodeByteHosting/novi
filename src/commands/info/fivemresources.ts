@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption(option =>
     option
       .setName('server')
-      .setDescription('Server identifier (IP:port, hostname:port, or CFX UUID)')
+      .setDescription('Server identifier (IP:port, hostname:port, CFX UUID, or cfx.re/join/... URL)')
       .setRequired(true)
   )
   .setDMPermission(false);
@@ -25,7 +25,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         new EmbedBuilder()
           .setColor(0xFF5555)
           .setTitle('Invalid Server Identifier')
-          .setDescription('Please provide a valid server IP:port, hostname:port, or CFX UUID.')
+          .setDescription('Please provide a valid server IP:port, hostname:port, CFX UUID, or cfx.re/join URL.')
       ]
     });
     return;
