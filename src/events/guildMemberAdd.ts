@@ -9,21 +9,27 @@ export default async (client: Client, member: GuildMember) => {
     const logsChannelId = config?.logsChannelId;
     const memberRoleId = config?.memberRoleId;
 
-    // Auto-assign member role
-    if (memberRoleId) {
+    // Auto-assign appropriate role based on whether member is a bot or user
+    const botRoleId = process.env.BOT_ROLE_ID;
+    const roleToAssign = member.user.bot ? botRoleId : memberRoleId;
+    
+    if (roleToAssign) {
       try {
-        await member.roles.add(memberRoleId);
-        logger.info(`Assigned member role to ${member.user.tag}`, {
+        await member.roles.add(roleToAssign);
+        const roleType = member.user.bot ? 'bot' : 'member';
+        logger.info(`Assigned ${roleType} role to ${member.user.tag}`, {
           context: 'GuildMemberAdd',
           userId: member.user.id,
-          roleId: memberRoleId
+          roleId: roleToAssign,
+          isBot: member.user.bot
         });
       } catch (err) {
-        logger.error(`Failed to assign member role to ${member.user.tag}`, {
+        logger.error(`Failed to assign role to ${member.user.tag}`, {
           context: 'GuildMemberAdd',
           error: err,
           userId: member.user.id,
-          roleId: memberRoleId
+          roleId: roleToAssign,
+          isBot: member.user.bot
         });
       }
     }
