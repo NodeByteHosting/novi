@@ -31,7 +31,7 @@ export default async (client: Client) => {
     const status = statuses[Math.floor(Math.random() * statuses.length)];
     client.user?.setPresence({
       activities: [status],
-      status: 'online'
+      status: 'dnd'
     });
   }, 30 * 1000);
 

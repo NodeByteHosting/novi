@@ -13,7 +13,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   const categories: Record<string, any[]> = {
     'ℹ️ Information': [],    '🎮 Game Servers': [],    '🛡️ Moderation': [],
     '⚙️ Admin': [],
-    '� Fun': [],
+    '🎉 Fun': [],
     '🎫 Tickets': [],
     '👨‍💻 Developer': []
   };
