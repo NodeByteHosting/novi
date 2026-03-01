@@ -99,9 +99,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         );
 
       if (failedMembers.length > 0 && failedMembers.length <= 10) {
-        embed.addField('Failed Members', failedMembers.join('\n'), false);
+        embed.addFields(
+          { name: 'Failed Members', value: failedMembers.join('\n'), inline: false }
+        );
       } else if (failedMembers.length > 10) {
-        embed.addField('Failed Members', `${failedMembers.slice(0, 10).join('\n')}\n... and ${failedMembers.length - 10} more`, false);
+        embed.addFields(
+          { name: 'Failed Members', value: `${failedMembers.slice(0, 10).join('\n')}\n... and ${failedMembers.length - 10} more`, inline: false }
+        );
       }
 
       embed.setTimestamp();
@@ -176,9 +180,13 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         );
 
       if (failedBots.length > 0 && failedBots.length <= 10) {
-        embed.addField('Failed Bots', failedBots.join('\n'), false);
+        embed.addFields(
+          { name: 'Failed Bots', value: failedBots.join('\n'), inline: false }
+        );
       } else if (failedBots.length > 10) {
-        embed.addField('Failed Bots', `${failedBots.slice(0, 10).join('\n')}\n... and ${failedBots.length - 10} more`, false);
+        embed.addFields(
+          { name: 'Failed Bots', value: `${failedBots.slice(0, 10).join('\n')}\n... and ${failedBots.length - 10} more`, inline: false }
+        );
       }
 
       embed.setTimestamp();
