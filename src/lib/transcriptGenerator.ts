@@ -220,8 +220,9 @@ export async function generateTranscriptHTML(
   channelName: string,
   messages:    Message[],
   closedBy?:   string,
-  closeReason?: string,
+  closeMsg?:   string,
   category?:   string,
+  createMsg?:  string,
 ): Promise<string> {
   const parsed             = parseMessages([...messages].reverse());
   const messagesHtml       = renderMessages(parsed);
@@ -244,11 +245,11 @@ export async function generateTranscriptHTML(
 
   const metaStats = [
     { icon: 'fa-solid fa-calendar',         label: 'Opened',        value: createdAt },
-    { icon: 'fa-solid fa-comment',           label: 'Messages',      value: String(parsed.length) },
-    { icon: 'fa-solid fa-users',             label: 'Participants',  value: String(uniqueParticipants) },
+    { icon: 'fa-solid fa-comment',          label: 'Messages',      value: String(parsed.length) },
+    { icon: 'fa-solid fa-users',            label: 'Participants',  value: String(uniqueParticipants) },
     { icon: 'fa-solid fa-clock-rotate-left', label: 'Generated',     value: generatedAt },
-    ...(closedBy    ? [{ icon: 'fa-solid fa-user-shield',  label: 'Closed By',    value: closedBy }]    : []),
-    ...(closeReason ? [{ icon: 'fa-solid fa-comment-dots', label: 'Close Reason', value: closeReason }] : []),
+    ...(closedBy  ? [{ icon: 'fa-solid fa-user-shield', label: 'Closed By',   value: closedBy }]   : []),
+    ...(closeMsg  ? [{ icon: 'fa-solid fa-comment-dots', label: 'Close Note', value: closeMsg }]   : []),
   ].map(s => `
     <div class="stat-item">
       <div class="stat-icon"><i class="${s.icon}"></i></div>
@@ -445,6 +446,17 @@ export async function generateTranscriptHTML(
       </div>
       <div class="stats-grid">${metaStats}</div>
     </div>
+
+    ${createMsg ? `
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--subtle); margin-bottom: 8px;">
+        <i class="fa-solid fa-pencil" style="margin-right: 6px;"></i>Initial Message
+      </div>
+      <div style="font-size: 13px; color: var(--text); line-height: 1.6; white-space: pre-wrap; word-break: break-word;">
+        ${escapeHtml(createMsg)}
+      </div>
+    </div>
+    ` : ''}
 
     <div class="msg-panel">
       <div class="msg-panel-head">

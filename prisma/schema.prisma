@@ -37,12 +37,13 @@ model Ticket {
   threadId    String   @unique @map("thread_id")
   userId      String   @map("user_id")
   category    String
+  createMsg   String?  @db.Text @map("create_msg") // User's message when creating ticket
+  closeMsg    String?  @db.Text @map("close_msg") // Message when ticket was closed
   status      String   @default("open")
   claimedBy   String?  @map("claimed_by")
   createdAt   DateTime @default(now()) @map("created_at")
   closedAt    DateTime? @map("closed_at")
   closedBy    String?  @map("closed_by")
-  closeReason String?  @map("close_reason")
 
   @@map("tickets")
   @@index([guildId])
@@ -57,14 +58,56 @@ model GuildConfig {
   ticketChannelId String? @map("ticket_channel_id")
   ticketLogChannelId String? @map("ticket_log_channel_id")
   ticketMessageId String? @map("ticket_message_id")
-  supportRoleId   String? @map("support_role_id")
+  supportRoleId   String? @map("support_role_id") // Deprecated: use supportRoleIds
+  supportRoleIds  String? @map("support_role_ids") // JSON array of support role IDs
   memberRoleId    String? @map("member_role_id")
   botRoleId       String? @map("bot_role_id")
   welcomeChannelId String? @map("welcome_channel_id")
   disableSupportNotifications Boolean @default(false) @map("disable_support_notifications")
+  // Verification system: Check if user has role in source guild before allowing join
+  verificationEnabled Boolean @default(false) @map("verification_enabled")
+  verificationSourceGuildId String? @map("verification_source_guild_id")
+  verificationRoleIds String? @map("verification_role_ids") // JSON array of role IDs
+  // Mod roles with granular permissions: { roleId: ["ban", "kick", "timeout", ...] }
+  modRolePermissions String? @map("mod_role_permissions") // JSON object mapping role IDs to permission arrays
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("guild_configs")
+}
+
+model LevelConfig {
+  id              Int     @id @default(autoincrement())
+  guildId         String  @unique @map("guild_id")
+  enabled         Boolean @default(false)
+  maxLevel        Int     @default(10) @map("max_level") // Maximum level players can reach
+  baseThreshold   Int     @default(100) @map("base_threshold") // Base activity points for level 1
+  exponentFactor  Float   @default(1.5) @map("exponent_factor") // Exponential multiplier (1.5 = 50% increase per level)
+  decayRate       Float   @default(0.1) @map("decay_rate") // % of points lost per day of inactivity (0.1 = 10%)
+  inactivityDays  Int     @default(7) @map("inactivity_days") // Days before decay starts
+  levelRoleIds    String? @map("level_role_ids") // JSON array of role IDs in order [level1RoleId, level2RoleId, ...]
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("level_configs")
+}
+
+model UserLevel {
+  id              Int      @id @default(autoincrement())
+  guildId         String   @map("guild_id")
+  userId          String   @map("user_id")
+  level           Int      @default(0)
+  activityPoints  Int      @default(0) @map("activity_points")
+  messageCount    Int      @default(0) @map("message_count")
+  reactionCount   Int      @default(0) @map("reaction_count")
+  lastActiveAt    DateTime @default(now()) @map("last_active_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([guildId, userId])
+  @@map("user_levels")
+  @@index([guildId])
+  @@index([userId])
+  @@index([level])
 }
 
 model Transcript {

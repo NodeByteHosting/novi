@@ -9,6 +9,89 @@ export default async (client: Client, member: GuildMember) => {
     const logsChannelId = config?.logsChannelId;
     const memberRoleId = config?.memberRoleId;
 
+    // ──── Verification System: Check if user meets requirements from source guild ────
+    if (config?.verificationEnabled && config?.verificationSourceGuildId) {
+      try {
+        // Skip verification for bots - allow bots to join both servers
+        if (member.user.bot) {
+          logger.debug('Bot detected, skipping verification check', {
+            context: 'GuildMemberAdd',
+            userId: member.user.id,
+            guildId: member.guild.id
+          });
+        } else {
+          const sourceGuild = client.guilds.cache.get(config.verificationSourceGuildId);
+          if (!sourceGuild) {
+            logger.warn('Verification source guild not found', {
+              context: 'GuildMemberAdd',
+              sourceGuildId: config.verificationSourceGuildId,
+              currentGuildId: member.guild.id
+            });
+            await member.kick('Verification source guild not configured properly');
+            return;
+          }
+
+          // Try to fetch the member from the source guild
+          let sourceMember = sourceGuild.members.cache.get(member.user.id);
+          if (!sourceMember) {
+            try {
+              sourceMember = await sourceGuild.members.fetch(member.user.id);
+            } catch (fetchErr) {
+              // User is not in the source guild
+              logger.debug('User not in source guild, kicking', {
+                context: 'GuildMemberAdd',
+                userId: member.user.id,
+                sourceGuildId: config.verificationSourceGuildId,
+                currentGuildId: member.guild.id
+              });
+              await member.kick('You must be a member of the verification server with required roles');
+              return;
+            }
+          }
+
+          // Get required role IDs
+          const requiredRoles = await db.getVerificationRoles(member.guild.id);
+          if (!requiredRoles || requiredRoles.length === 0) {
+            logger.warn('No required roles configured for verification', {
+              context: 'GuildMemberAdd',
+              guildId: member.guild.id
+            });
+            return;
+          }
+
+          // Check if user has at least one of the required roles (supports multiple staff roles)
+          const hasRequiredRole = requiredRoles.some(roleId => sourceMember!.roles.cache.has(roleId));
+          if (!hasRequiredRole) {
+            logger.debug('User lacks required roles, kicking', {
+              context: 'GuildMemberAdd',
+              userId: member.user.id,
+              sourceGuildId: config.verificationSourceGuildId,
+              currentGuildId: member.guild.id,
+              requiredRoles
+            });
+            await member.kick('You do not have the required roles in the verification server');
+            return;
+          }
+
+          logger.debug('User passed verification check', {
+            context: 'GuildMemberAdd',
+            userId: member.user.id,
+            sourceGuildId: config.verificationSourceGuildId,
+            currentGuildId: member.guild.id
+          });
+        }
+      } catch (verifyErr) {
+        logger.error('Error during verification check', {
+          context: 'GuildMemberAdd',
+          error: verifyErr,
+          userId: member.user.id,
+          guildId: member.guild.id
+        });
+        await member.kick('Error during verification process').catch(() => null);
+        return;
+      }
+    }
+
     // Auto-assign appropriate role based on whether member is a bot or user
     const botRoleId = process.env.BOT_ROLE_ID;
     const roleToAssign = member.user.bot ? botRoleId : memberRoleId;

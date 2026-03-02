@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionsBitField, EmbedBuilder, TextChannel } from 'discord.js';
 import db from '../../lib/db';
+import { hasModPermission } from '../../lib/modPermissions';
 
 export const data = new SlashCommandBuilder()
   .setName('purge')
@@ -21,7 +22,10 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction: ChatInputCommandInteraction) {
   // Check permissions
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageMessages)) {
+  const hasDiscordPerm = interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageMessages);
+  const hasModPerm = await hasModPermission(interaction.member as any, 'purge');
+
+  if (!hasDiscordPerm && !hasModPerm) {
     const errorEmbed = new EmbedBuilder()
       .setColor(0xFF0000)
       .setTitle('❌ Permission Denied')

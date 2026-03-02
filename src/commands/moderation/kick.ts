@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionsBitField, TextChannel } from 'discord.js';
 import db from '../../lib/db';
+import { hasModPermission } from '../../lib/modPermissions';
 
 export const data = new SlashCommandBuilder()
   .setName('kick')
@@ -10,7 +11,10 @@ export const data = new SlashCommandBuilder()
   .addStringOption((o) => o.setName('reason').setDescription('Reason').setMinLength(1).setMaxLength(100).setRequired(false));
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.KickMembers))
+  const hasDiscordPerm = interaction.memberPermissions?.has(PermissionsBitField.Flags.KickMembers);
+  const hasModPerm = await hasModPermission(interaction.member as any, 'kick');
+
+  if (!hasDiscordPerm && !hasModPerm)
     return interaction.reply({ content: '❌ You lack permission to kick members.', flags: [64] });
 
   const target = interaction.options.getUser('target', true);

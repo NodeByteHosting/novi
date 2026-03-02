@@ -1,4 +1,4 @@
-import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection } from 'discord.js';
+import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection, StringSelectMenuBuilder } from 'discord.js';
 import db from '../lib/db';
 import { logger } from '../lib/logger';
 import { ExtendedClient } from '../types';
@@ -140,40 +140,76 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
       }
     }
     
+    if (interaction.isStringSelectMenu()) {
+      try {
+        // Handle category selection
+        if (interaction.customId === 'ticket_category_select') {
+          try {
+            const category = interaction.values[0];
+
+            const modal = new ModalBuilder()
+              .setCustomId(`ticket_modal_${category}`)
+              .setTitle(`Create a ${category.charAt(0).toUpperCase() + category.slice(1)} Ticket`);
+
+            const createMsgInput = new TextInputBuilder()
+              .setCustomId('ticket_description_input')
+              .setLabel('Describe Your Issue')
+              .setStyle(TextInputStyle.Paragraph)
+              .setPlaceholder('Please describe your issue in detail...')
+              .setRequired(true)
+              .setMinLength(10)
+              .setMaxLength(2000);
+
+            const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(createMsgInput);
+            modal.addComponents(row1);
+
+            await interaction.showModal(modal);
+          } catch (err) {
+            logger.interactionError('Error showing ticket modal', interaction, err);
+            if (!interaction.replied) {
+              try {
+                await interaction.reply({
+                  content: '❌ Failed to open ticket form.',
+                  flags: [64]
+                });
+              } catch (replyErr) {
+                logger.error('Failed to send modal error reply', {
+                  context: 'SelectMenuHandler',
+                  error: replyErr
+                });
+              }
+            }
+          }
+          return;
+        }
+      } catch (err) {
+        logger.interactionError('Error in select menu handler', interaction, err);
+      }
+    }
+
     if (interaction.isButton()) {
       try {
         // Handle new thread-based ticket creation
         if (interaction.customId === 'ticket_create') {
           try {
-            const modal = new ModalBuilder()
-              .setCustomId('ticket_create_modal')
-              .setTitle('Create a Support Ticket');
+            const selectMenu = new StringSelectMenuBuilder()
+              .setCustomId('ticket_category_select')
+              .setPlaceholder('Select a ticket category')
+              .addOptions(
+                { label: 'General Support', value: 'general', emoji: '📋', description: 'General questions and support' },
+                { label: 'Technical Support', value: 'tech', emoji: '🖥️', description: 'Technical issues and troubleshooting' },
+                { label: 'Game Server', value: 'game', emoji: '🎮', description: 'FiveM, Minecraft, Rust server support' },
+                { label: 'VPS / Hosting', value: 'vps', emoji: '🔧', description: 'VPS and hosting related issues' },
+                { label: 'Bug Report', value: 'bug', emoji: '🐛', description: 'Report a bug or issue' },
+                { label: 'Feature Request', value: 'feature', emoji: '✨', description: 'Request a new feature' },
+                { label: 'Sales', value: 'sales', emoji: '📞', description: 'Sales and partnership inquiries' }
+              );
 
-            const categoryInput = new TextInputBuilder()
-              .setCustomId('ticket_category_input')
-              .setLabel('Category')
-              .setStyle(TextInputStyle.Short)
-              .setPlaceholder('general, tech, game, or vps')
-              .setRequired(true)
-              .setMinLength(1)
-              .setMaxLength(20);
+            const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
-            const descriptionInput = new TextInputBuilder()
-              .setCustomId('ticket_description_input')
-              .setLabel('Brief Description of Your Issue')
-              .setStyle(TextInputStyle.Paragraph)
-              .setPlaceholder('Please describe your issue...')
-              .setRequired(true)
-              .setMinLength(10)
-              .setMaxLength(500);
-
-            const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(categoryInput);
-            const row2 = new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput);
-            modal.addComponents(row1, row2);
-
-            await interaction.showModal(modal);
+            await interaction.reply({ components: [row], flags: [64] });
           } catch (err) {
-            logger.interactionError('Error showing ticket creation modal', interaction, err);
+            logger.interactionError('Error showing ticket category select', interaction, err);
             if (!interaction.replied) {
               try {
                 await interaction.reply({
@@ -181,7 +217,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                   flags: [64]
                 });
               } catch (replyErr) {
-                logger.error('Failed to send modal error reply', {
+                logger.error('Failed to send select error reply', {
                   context: 'ButtonHandler',
                   error: replyErr
                 });
@@ -375,11 +411,11 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
     if (interaction.isModalSubmit()) {
       try {
-        // Handle new thread-based ticket creation
-        if (interaction.customId === 'ticket_create_modal') {
+        // Handle new thread-based ticket creation with category from modal customId
+        if (interaction.customId.startsWith('ticket_modal_')) {
           try {
-            const category = interaction.fields.getTextInputValue('ticket_category_input').toLowerCase().trim();
-            const description = interaction.fields.getTextInputValue('ticket_description_input');
+            const category = interaction.customId.replace('ticket_modal_', '');
+            const createMsg = interaction.fields.getTextInputValue('ticket_description_input');
             const user = interaction.user;
             const guild = interaction.guild;
 
@@ -391,10 +427,10 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               return;
             }
 
-            const validCategories = ['general', 'tech', 'game', 'vps'];
+            const validCategories = ['general', 'tech', 'game', 'vps', 'billing', 'bug', 'feature', 'sales'];
             if (!validCategories.includes(category)) {
               return interaction.reply({ 
-                content: `❌ Invalid category. Please use one of: ${validCategories.join(', ')}`, 
+                content: `❌ Invalid category.`, 
                 flags: [64] 
               });
             }
@@ -403,7 +439,11 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               general: '📋',
               tech: '🖥️',
               game: '🎮',
-              vps: '🔧'
+              vps: '🔧',
+              billing: '💳',
+              bug: '🐛',
+              feature: '✨',
+              sales: '📞'
             };
 
             try {
@@ -443,6 +483,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 thread = await ticketChannel.threads.create({
                   name: threadName,
                   autoArchiveDuration: 60,
+                  type: ChannelType.PrivateThread,
                   reason: `Support ticket created by ${user.tag}`
                 });
               } catch (threadErr) {
@@ -458,11 +499,35 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 });
               }
 
-              // Add support role and user to thread
+              // Add ticket creator and support roles to thread
               try {
+                // Add the ticket creator
                 await thread.members.add(user.id);
+
+                // Add all members with support roles to the thread
+                const supportRoles = await db.getSupportRoles(guild.id);
+                if (supportRoles && supportRoles.length > 0) {
+                  // Fetch all guild members to check for support roles
+                  const members = await guild.members.fetch();
+                  
+                  for (const [, member] of members) {
+                    // Check if member has any support role
+                    if (member.roles.cache.some(role => supportRoles.includes(role.id))) {
+                      try {
+                        await thread.members.add(member.id);
+                      } catch (roleErr) {
+                        logger.warn('Failed to add support member to thread', {
+                          context: 'ModalHandler',
+                          error: roleErr,
+                          threadId: thread.id,
+                          memberId: member.id
+                        });
+                      }
+                    }
+                  }
+                }
               } catch (memberErr) {
-                logger.warn('Failed to add member to thread', {
+                logger.warn('Failed to add members to thread', {
                   context: 'ModalHandler',
                   error: memberErr,
                   threadId: thread.id,
@@ -474,7 +539,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               const ticketEmbed = new EmbedBuilder()
                 .setColor(0x3256d9)
                 .setTitle(`${categoryEmojis[category]} ${category.charAt(0).toUpperCase() + category.slice(1)} Support`)
-                .setDescription(description)
+                .setDescription(createMsg)
                 .addFields(
                   { name: 'Created by:', value: user.toString(), inline: true },
                   { name: 'Status:', value: '🟢 Open', inline: true },
@@ -522,7 +587,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
               // Save ticket to database
               try {
-                await db.createTicket(guild.id, thread.id, user.id, category);
+                await db.createTicket(guild.id, thread.id, user.id, category, createMsg);
               } catch (dbErr) {
                 logger.error('Failed to save ticket to database', {
                   context: 'ModalHandler',
@@ -674,8 +739,9 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 ticketThread.name,
                 sortedMessages,
                 closedBy.tag,
-                closeReason,
-                ticket.category
+                ticket.closeMsg || undefined,
+                ticket.category,
+                ticket.createMsg || undefined
               );
 
               transcriptSlug = generateTranscriptSlug();

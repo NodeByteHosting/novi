@@ -72,11 +72,10 @@ export default async (client: Client) => {
     }
   }
 
-  // Set up periodic ticket message refresh (every 12 hours)
-  // This ensures Discord continues to accept reactions on the ticket button
-  setInterval(async () => {
+  // Function to refresh ticket messages
+  const refreshTicketMessages = async () => {
     try {
-      logger.debug('Starting periodic ticket message refresh', {
+      logger.debug('Starting ticket message refresh', {
         context: 'ReadyEvent'
       });
 
@@ -125,10 +124,65 @@ export default async (client: Client) => {
         }
       }
     } catch (err) {
-      logger.error('Ticket message refresh interval error', {
+      logger.error('Ticket message refresh error', {
         context: 'ReadyEvent',
         error: err
       });
     }
-  }, 12 * 60 * 60 * 1000); // 12 hours in milliseconds
+  };
+
+  // Refresh ticket messages on startup
+  await refreshTicketMessages();
+
+  // Set up periodic ticket message refresh (every 12 hours)
+  // This ensures Discord continues to accept reactions on the ticket button
+  setInterval(refreshTicketMessages, 12 * 60 * 60 * 1000); // 12 hours in milliseconds
+
+  // Function to apply decay to all guild level systems
+  const applyLevelDecay = async () => {
+    try {
+      logger.debug('Starting daily level decay job', {
+        context: 'ReadyEvent'
+      });
+
+      for (const [guildId] of client.guilds.cache) {
+        try {
+          await db.applyDecay(guildId);
+        } catch (err) {
+          logger.error('Failed to apply decay for guild', {
+            context: 'ReadyEvent',
+            error: err,
+            guildId
+          });
+        }
+      }
+    } catch (err) {
+      logger.error('Level decay job error', {
+        context: 'ReadyEvent',
+        error: err
+      });
+    }
+  };
+
+  // Run decay once on startup, then daily at 2 AM
+  const now = new Date();
+  const target = new Date();
+  target.setHours(2, 0, 0, 0);
+  
+  // If past 2 AM, schedule for tomorrow
+  if (now > target) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  const timeUntilDecay = target.getTime() - now.getTime();
+  setTimeout(() => {
+    applyLevelDecay();
+    // Run daily after initial delay
+    setInterval(applyLevelDecay, 24 * 60 * 60 * 1000);
+  }, timeUntilDecay);
+
+  logger.info('Level system decay scheduled', {
+    context: 'ReadyEvent',
+    nextRunAt: target.toISOString()
+  });
 };

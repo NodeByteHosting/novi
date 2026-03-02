@@ -9,7 +9,12 @@ import { initMalwareFilter, startAutoRefresh } from './lib/malwareFilter';
 
 const token = process.env.BOT_TOKEN;
 const clientId = process.env.CLIENT_ID;
-const guildId = process.env.GUILD_ID;
+// Support both single GUILD_ID (legacy) and multiple GUILD_IDS
+const guildIds = process.env.GUILD_IDS 
+  ? process.env.GUILD_IDS.split(',').map(id => id.trim())
+  : process.env.GUILD_ID 
+    ? [process.env.GUILD_ID]
+    : [];
 
 if (!token) {
   logger.error('BOT_TOKEN is required in .env');
@@ -113,30 +118,33 @@ try {
           try {
             // Register slash commands before calling the handler
             try {
-              if (!guildId) {
-                logger.warn('GUILD_ID not set, skipping command registration', {
+              if (guildIds.length === 0) {
+                logger.warn('GUILD_ID or GUILD_IDS not set, skipping command registration', {
                   context: 'CommandRegistration'
                 });
               } else {
-                const guild = client.guilds.cache.get(guildId);
-                if (guild) {
-                  const commandData = Array.from(client.commands.values())
-                    .map(cmd => cmd.data)
-                    .filter(data => data !== undefined);
-                  
-                  logger.info(`Registering ${commandData.length} slash commands to guild ${guildId}...`, {
-                    context: 'CommandRegistration'
-                  });
-                  
-                  const registered = await guild.commands.set(commandData);
-                  logger.info(`Successfully registered ${registered.size} slash commands`, {
-                    context: 'CommandRegistration',
-                    count: registered.size
-                  });
-                } else {
-                  logger.warn(`Guild ${guildId} not found in cache`, {
-                    context: 'CommandRegistration'
-                  });
+                const commandData = Array.from(client.commands.values())
+                  .map(cmd => cmd.data)
+                  .filter(data => data !== undefined);
+                
+                for (const guildId of guildIds) {
+                  const guild = client.guilds.cache.get(guildId);
+                  if (guild) {
+                    logger.info(`Registering ${commandData.length} slash commands to guild ${guildId}...`, {
+                      context: 'CommandRegistration'
+                    });
+                    
+                    const registered = await guild.commands.set(commandData);
+                    logger.info(`Successfully registered ${registered.size} slash commands to guild ${guildId}`, {
+                      context: 'CommandRegistration',
+                      guildId,
+                      count: registered.size
+                    });
+                  } else {
+                    logger.warn(`Guild ${guildId} not found in cache`, {
+                      context: 'CommandRegistration'
+                    });
+                  }
                 }
               }
             } catch (regErr) {

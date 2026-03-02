@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { logger } from '../lib/logger';
 import { isMalicious } from '../lib/malwareFilter';
+import db from '../lib/db';
 
 const PREFIX = '!';
 
@@ -82,6 +83,16 @@ export default async (client: Client, message: Message) => {
       });
     }
     return;
+  }
+
+  // Track activity for level system
+  if (message.guild) {
+    const levelConfig = await db.getLevelConfig(message.guildId!);
+    if (levelConfig?.enabled) {
+      db.addActivityPoints(message.guildId!, message.author.id, 1, 'message').catch(err => {
+        logger.debug('Failed to add activity points', { context: 'MessageCreate', error: err });
+      });
+    }
   }
 
   // Handle prefix commands (! prefix)

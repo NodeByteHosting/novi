@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionsBitField, TextChannel } from 'discord.js';
 import db from '../../lib/db';
+import { hasModPermission } from '../../lib/modPermissions';
 
 export const data = new SlashCommandBuilder()
   .setName('ban')
@@ -10,8 +11,13 @@ export const data = new SlashCommandBuilder()
   .addStringOption((o) => o.setName('reason').setDescription('Reason').setMinLength(1).setMaxLength(100).setRequired(false));
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers))
+  // Check if user has permission to ban (either through Discord perms or mod roles)
+  const hasDiscordPerm = interaction.memberPermissions?.has(PermissionsBitField.Flags.BanMembers);
+  const hasModPerm = await hasModPermission(interaction.member as any, 'ban');
+
+  if (!hasDiscordPerm && !hasModPerm) {
     return interaction.reply({ content: '❌ You lack permission to ban members.', flags: [64] });
+  }
 
   const target = interaction.options.getUser('target', true);
   const reason = interaction.options.getString('reason') || 'No reason provided';

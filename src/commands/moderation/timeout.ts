@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionsBitField, TextChannel, User } from 'discord.js';
 import db from '../../lib/db';
 import { logger } from '../../lib/logger';
+import { hasModPermission } from '../../lib/modPermissions';
 
 export const data = new SlashCommandBuilder()
   .setName('timeout')
@@ -41,7 +42,10 @@ export const data = new SlashCommandBuilder()
   );
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.ModerateMembers))
+  const hasDiscordPerm = interaction.memberPermissions?.has(PermissionsBitField.Flags.ModerateMembers);
+  const hasModPerm = await hasModPermission(interaction.member as any, 'timeout');
+
+  if (!hasDiscordPerm && !hasModPerm)
     return interaction.reply({ content: '❌ You lack permission to moderate members.', flags: [64] });
 
   const subcommand = interaction.options.getSubcommand();

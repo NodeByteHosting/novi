@@ -221,7 +221,7 @@ export default {
       return false;
     }
   },
-  async createTicket(guildId: string, threadId: string, userId: string, category: string): Promise<Ticket | null> {
+  async createTicket(guildId: string, threadId: string, userId: string, category: string, createMsg?: string | null): Promise<Ticket | null> {
     try {
       const result = await prisma.ticket.create({
         data: {
@@ -229,6 +229,7 @@ export default {
           threadId,
           userId,
           category,
+          createMsg: createMsg || null,
           status: 'open'
         }
       });
@@ -320,7 +321,7 @@ export default {
       return null;
     }
   },
-  async closeTicket(threadId: string, closedBy: string, closeReason: string): Promise<Ticket | null> {
+  async closeTicket(threadId: string, closedBy: string, closeMsg: string): Promise<Ticket | null> {
     try {
       const result = await prisma.ticket.update({
         where: { threadId },
@@ -328,7 +329,7 @@ export default {
           status: 'closed',
           closedBy,
           closedAt: new Date(),
-          closeReason
+          closeMsg
         }
       });
       logger.debug('Ticket closed', {
@@ -558,6 +559,304 @@ export default {
         slug
       });
       return false;
+    }
+  },
+  async setVerification(guildId: string, sourceGuildId: string, roleIds: string[]): Promise<GuildConfig | null> {
+    try {
+      const result = await this.updateGuildConfig(guildId, {
+        verificationEnabled: true,
+        verificationSourceGuildId: sourceGuildId,
+        verificationRoleIds: JSON.stringify(roleIds)
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to set verification', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async disableVerification(guildId: string): Promise<GuildConfig | null> {
+    try {
+      const result = await this.updateGuildConfig(guildId, {
+        verificationEnabled: false,
+        verificationSourceGuildId: null,
+        verificationRoleIds: null
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to disable verification', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async getVerificationRoles(guildId: string): Promise<string[] | null> {
+    try {
+      const config = await this.getGuildConfig(guildId);
+      if (!config?.verificationRoleIds) return null;
+      return JSON.parse(config.verificationRoleIds);
+    } catch (err) {
+      logger.error('Failed to get verification roles', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async setSupportRoles(guildId: string, roleIds: string[]): Promise<GuildConfig | null> {
+    try {
+      const result = await this.updateGuildConfig(guildId, {
+        supportRoleIds: JSON.stringify(roleIds)
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to set support roles', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async getSupportRoles(guildId: string): Promise<string[] | null> {
+    try {
+      const config = await this.getGuildConfig(guildId);
+      if (!config?.supportRoleIds) return null;
+      return JSON.parse(config.supportRoleIds);
+    } catch (err) {
+      logger.error('Failed to get support roles', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async setModRolePermissions(guildId: string, permissions: Record<string, string[]>): Promise<GuildConfig | null> {
+    try {
+      const result = await this.updateGuildConfig(guildId, {
+        modRolePermissions: JSON.stringify(permissions)
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to set mod role permissions', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+  async getModRolePermissions(guildId: string): Promise<Record<string, string[]> | null> {
+    try {
+      const config = await this.getGuildConfig(guildId);
+      if (!config?.modRolePermissions) return null;
+      return JSON.parse(config.modRolePermissions);
+    } catch (err) {
+      logger.error('Failed to get mod role permissions', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+
+  // Level system methods
+  async getLevelConfig(guildId: string) {
+    try {
+      const config = await prisma.levelConfig.findUnique({ where: { guildId } });
+      return config;
+    } catch (err) {
+      logger.error('Failed to get level config', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+
+  async setupLevelSystem(guildId: string, maxLevel: number, levelRoleIds: string[]) {
+    try {
+      const result = await prisma.levelConfig.upsert({
+        where: { guildId },
+        update: {
+          enabled: true,
+          maxLevel,
+          levelRoleIds: JSON.stringify(levelRoleIds)
+        },
+        create: {
+          guildId,
+          enabled: true,
+          maxLevel,
+          levelRoleIds: JSON.stringify(levelRoleIds)
+        }
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to setup level system', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+
+  async disableLevelSystem(guildId: string) {
+    try {
+      const result = await prisma.levelConfig.update({
+        where: { guildId },
+        data: { enabled: false }
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to disable level system', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return null;
+    }
+  },
+
+  async getUserLevel(guildId: string, userId: string) {
+    try {
+      let userLevel = await prisma.userLevel.findUnique({
+        where: { guildId_userId: { guildId, userId } }
+      });
+      
+      if (!userLevel) {
+        userLevel = await prisma.userLevel.create({
+          data: { guildId, userId, level: 0, activityPoints: 0 }
+        });
+      }
+      
+      return userLevel;
+    } catch (err) {
+      logger.error('Failed to get user level', {
+        context: 'Database',
+        error: err,
+        guildId,
+        userId
+      });
+      return null;
+    }
+  },
+
+  async addActivityPoints(guildId: string, userId: string, points: number, type: 'message' | 'reaction') {
+    try {
+      const userLevel = await this.getUserLevel(guildId, userId);
+      if (!userLevel) return null;
+
+      const updateData: Record<string, any> = {
+        activityPoints: { increment: points },
+        lastActiveAt: new Date()
+      };
+
+      if (type === 'message') {
+        updateData.messageCount = { increment: 1 };
+      } else if (type === 'reaction') {
+        updateData.reactionCount = { increment: 1 };
+      }
+
+      const result = await prisma.userLevel.update({
+        where: { guildId_userId: { guildId, userId } },
+        data: updateData
+      });
+
+      return result;
+    } catch (err) {
+      logger.error('Failed to add activity points', {
+        context: 'Database',
+        error: err,
+        guildId,
+        userId,
+        points
+      });
+      return null;
+    }
+  },
+
+  calculateLevelThreshold(level: number, baseThreshold: number, exponentFactor: number): number {
+    // Calculate exponential threshold: baseThreshold * (exponentFactor ^ (level - 1))
+    return Math.floor(baseThreshold * Math.pow(exponentFactor, level - 1));
+  },
+
+  async calculateUserLevel(guildId: string, userId: string): Promise<number> {
+    try {
+      const userLevel = await this.getUserLevel(guildId, userId);
+      const config = await this.getLevelConfig(guildId);
+
+      if (!userLevel || !config || !config.enabled) return 0;
+
+      let level = 0;
+      for (let i = 1; i <= config.maxLevel; i++) {
+        const threshold = this.calculateLevelThreshold(i, config.baseThreshold, config.exponentFactor);
+        if (userLevel.activityPoints >= threshold) {
+          level = i;
+        } else {
+          break;
+        }
+      }
+
+      return level;
+    } catch (err) {
+      logger.error('Failed to calculate user level', {
+        context: 'Database',
+        error: err,
+        guildId,
+        userId
+      });
+      return 0;
+    }
+  },
+
+  async applyDecay(guildId: string) {
+    try {
+      const config = await this.getLevelConfig(guildId);
+      if (!config || !config.enabled) return;
+
+      const now = new Date();
+      const inactiveThreshold = new Date(now.getTime() - config.inactivityDays * 24 * 60 * 60 * 1000);
+
+      // Get inactive users
+      const inactiveUsers = await prisma.userLevel.findMany({
+        where: {
+          guildId,
+          lastActiveAt: { lt: inactiveThreshold }
+        }
+      });
+
+      // Apply decay
+      for (const user of inactiveUsers) {
+        const decayPoints = Math.max(0, Math.floor(user.activityPoints * config.decayRate));
+        await prisma.userLevel.update({
+          where: { guildId_userId: { guildId, userId: user.userId } },
+          data: {
+            activityPoints: { decrement: decayPoints }
+          }
+        });
+      }
+
+      logger.debug('Applied level decay', {
+        context: 'Database',
+        guildId,
+        affectedUsers: inactiveUsers.length
+      });
+    } catch (err) {
+      logger.error('Failed to apply decay', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
     }
   }
 };
