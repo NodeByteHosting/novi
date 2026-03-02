@@ -1,6 +1,22 @@
 import { Guild, Role } from 'discord.js';
 import { logger } from './logger';
 
+// Convert HSL to Hex color (returns as number for Discord.js)
+function hslToHex(h: number, s: number, l: number): number {
+  s /= 100;
+  l /= 100;
+  const k = (n: number) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  
+  const toHex = (x: number) => {
+    const hex = Math.round(255 * x).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+  
+  return parseInt(toHex(f(0)) + toHex(f(8)) + toHex(f(4)), 16);
+}
+
 // Create level roles for a guild
 export async function createLevelRoles(guild: Guild, maxLevels: number): Promise<string[] | null> {
   try {
@@ -8,8 +24,15 @@ export async function createLevelRoles(guild: Guild, maxLevels: number): Promise
 
     for (let i = 1; i <= maxLevels; i++) {
       try {
+        // Generate a color for each level (gradient from blue to red)
+        const hue = (i / maxLevels) * 360;
+        const saturation = 70;
+        const lightness = 50;
+        const color = hslToHex(hue, saturation, lightness);
+
         const role = await guild.roles.create({
           name: `Level ${i}`,
+          color: color,
           reason: 'Automatic level role creation'
         });
         roleIds.push(role.id);
