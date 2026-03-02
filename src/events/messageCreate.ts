@@ -97,6 +97,20 @@ export default async (client: Client, message: Message) => {
 
   // Handle prefix commands (! prefix)
   if (message.content.startsWith(PREFIX)) {
+    // Get main guild ID (first GUILD_ID from env)
+    const mainGuildId = process.env.GUILD_IDS
+      ? process.env.GUILD_IDS.split(',')[0]?.trim()
+      : process.env.GUILD_ID;
+
+    // Only allow prefix commands in the main guild
+    if (!mainGuildId || message.guildId !== mainGuildId) {
+      await message.reply({
+        content: '❌ These commands are unavailable in this guild.',
+        flags: [64]
+      }).catch(() => null);
+      return;
+    }
+
     const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
     let command = args[0]?.toLowerCase();
 
