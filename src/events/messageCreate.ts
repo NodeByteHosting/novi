@@ -106,7 +106,7 @@ export default async (client: Client, message: Message) => {
     if (!mainGuildId || message.guildId !== mainGuildId) {
       await message.reply({
         content: '❌ These commands are unavailable in this guild.',
-        flags: [64]
+        flags: ['SuppressEmbeds']
       }).catch(() => null);
       return;
     }
