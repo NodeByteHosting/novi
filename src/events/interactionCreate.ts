@@ -277,6 +277,38 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                   threadId: ticketThread.id
                 });
               });
+
+              // Remove other support staff from thread (only claimer stays)
+              try {
+                const config = await db.getOrCreateGuildConfig(ticketThread.guild?.id || '');
+                const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
+                
+                if (supportRoles && supportRoles.length > 0 && ticketThread.guild) {
+                  const members = await ticketThread.guild.members.fetch();
+                  
+                  for (const [, member] of members) {
+                    // If member has support role but isn't the claimer, remove them
+                    if (member.roles.cache.some(role => supportRoles.includes(role.id)) && member.id !== interaction.user.id) {
+                      try {
+                        await ticketThread.members.remove(member.id);
+                      } catch (remErr) {
+                        logger.warn('Failed to remove member from ticket', {
+                          context: 'ButtonHandler',
+                          error: remErr,
+                          threadId: ticketThread.id,
+                          memberId: member.id
+                        });
+                      }
+                    }
+                  }
+                }
+              } catch (memberErr) {
+                logger.warn('Failed to manage ticket members after claim', {
+                  context: 'ButtonHandler',
+                  error: memberErr,
+                  threadId: ticketThread.id
+                });
+              }
             } catch (err) {
               logger.interactionError('Error claiming ticket', interaction, err);
               if (!interaction.replied) {
@@ -343,6 +375,38 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                   threadId: ticketThread.id
                 });
               });
+
+              // Re-add all support staff members to thread
+              try {
+                const config = await db.getOrCreateGuildConfig(ticketThread.guild?.id || '');
+                const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
+                
+                if (supportRoles && supportRoles.length > 0 && ticketThread.guild) {
+                  const members = await ticketThread.guild.members.fetch();
+                  
+                  for (const [, member] of members) {
+                    // If member has support role, add them back
+                    if (member.roles.cache.some(role => supportRoles.includes(role.id))) {
+                      try {
+                        await ticketThread.members.add(member.id);
+                      } catch (addErr) {
+                        logger.warn('Failed to add member back to ticket', {
+                          context: 'ButtonHandler',
+                          error: addErr,
+                          threadId: ticketThread.id,
+                          memberId: member.id
+                        });
+                      }
+                    }
+                  }
+                }
+              } catch (memberErr) {
+                logger.warn('Failed to manage ticket members after unclaim', {
+                  context: 'ButtonHandler',
+                  error: memberErr,
+                  threadId: ticketThread.id
+                });
+              }
             } catch (err) {
               logger.interactionError('Error unclaiming ticket', interaction, err);
               if (!interaction.replied) {
@@ -572,11 +636,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
               // Send message to thread
               try {
-                const mentionSupportRole = (!config?.disableSupportNotifications && config?.supportRoleId) 
-                  ? `<@&${config.supportRoleId}> — ` 
-                  : '';
-                await thread.send({ content: `${mentionSupportRole}New support ticket!`, embeds: [ticketEmbed], components: [row] });
-                await thread.send(`${user.toString()}, please wait for the support team to respond. They will assist you shortly!`);
+                await thread.send({ content: `${user.toString()}, your support ticket has been created. Our support staff will review your issue shortly.`, embeds: [ticketEmbed], components: [row] });
               } catch (sendErr) {
                 logger.error('Failed to send initial messages to ticket thread', {
                   context: 'ModalHandler',
@@ -605,12 +665,18 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 category
               });
 
-              // Send ticket creation notification to logs channel
+              // Send ticket creation notification to logs channel with support role pings
               try {
                 const ticketLogsChannelId = config?.ticketLogChannelId;
                 if (ticketLogsChannelId) {
                   const logsChannel = guild.channels.cache.get(ticketLogsChannelId) as TextChannel;
                   if (logsChannel && 'send' in logsChannel) {
+                    // Get support roles to ping
+                    const supportRoles = await db.getSupportRoles(guild.id);
+                    const pingText = (supportRoles && supportRoles.length > 0 && !config?.disableSupportNotifications)
+                      ? supportRoles.map(roleId => `<@&${roleId}>`).join(' ')
+                      : '';
+
                     const ticketCreatedEmbed = new EmbedBuilder()
                       .setColor(0x3256d9)
                       .setTitle('🎫 Ticket Created')
@@ -624,7 +690,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                       .setTimestamp();
 
                     try {
-                      await logsChannel.send({ embeds: [ticketCreatedEmbed] });
+                      await logsChannel.send({ content: pingText, embeds: [ticketCreatedEmbed] });
                     } catch (logSendErr) {
                       logger.warn('Failed to send ticket creation log', {
                         context: 'ModalHandler',

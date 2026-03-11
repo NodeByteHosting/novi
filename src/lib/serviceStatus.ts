@@ -194,6 +194,7 @@ async function checkWebService(name: string, url: string): Promise<WebServiceSta
  * Check all NodeByte services
  */
 export async function checkAllServices(): Promise<{
+  vpsServers: GameServerStatus[];
   gameServers: GameServerStatus[];
   clientServices: GameServerStatus[];
   webServices: WebServiceStatus[];
@@ -201,6 +202,7 @@ export async function checkAllServices(): Promise<{
 }> {
   try {
     // Parse services config from JSON environment variable
+    let vpsServers: Array<{ name: string; ip: string }> = [];
     let gameServers: Array<{ name: string; ip: string }> = [];
     let clientServices: Array<{ name: string; ip: string }> = [];
     let webServices: Array<{ name: string; url: string }> = [];
@@ -208,6 +210,7 @@ export async function checkAllServices(): Promise<{
     if (process.env.SERVICES_CONFIG) {
       try {
         const config = JSON.parse(process.env.SERVICES_CONFIG);
+        vpsServers = config.vpsServers || [];
         gameServers = config.gameServers || [];
         clientServices = config.clientServices || [];
         webServices = config.webServices || [];
@@ -219,14 +222,15 @@ export async function checkAllServices(): Promise<{
       }
     }
 
-    if (gameServers.length === 0 && clientServices.length === 0 && webServices.length === 0) {
+    if (vpsServers.length === 0 && gameServers.length === 0 && clientServices.length === 0 && webServices.length === 0) {
       logger.warn('No services configured - check SERVICES_CONFIG environment variable', {
         context: 'ServiceStatus',
       });
     }
 
     // Check all services in parallel
-    const [gameServerResults, clientServiceResults, webServiceResults] = await Promise.all([
+    const [vpsServerResults, gameServerResults, clientServiceResults, webServiceResults] = await Promise.all([
+      Promise.all(vpsServers.map(server => pingGameServer(server.name, server.ip))),
       Promise.all(gameServers.map(server => pingGameServer(server.name, server.ip))),
       Promise.all(clientServices.map(server => pingGameServer(server.name, server.ip))),
       Promise.all(webServices.map(service => checkWebService(service.name, service.url))),
@@ -234,15 +238,18 @@ export async function checkAllServices(): Promise<{
 
     logger.info('Service status check completed', {
       context: 'ServiceStatus',
+      vpsServersChecked: vpsServerResults.length,
       gameServersChecked: gameServerResults.length,
       clientServicesChecked: clientServiceResults.length,
       webServicesChecked: webServiceResults.length,
+      vpsServersOnline: vpsServerResults.filter(s => s.status === 'online').length,
       gameServersOnline: gameServerResults.filter(s => s.status === 'online').length,
       clientServicesOnline: clientServiceResults.filter(s => s.status === 'online').length,
       webServicesOnline: webServiceResults.filter(s => s.status === 'online').length,
     });
 
     return {
+      vpsServers: vpsServerResults,
       gameServers: gameServerResults,
       clientServices: clientServiceResults,
       webServices: webServiceResults,
@@ -255,6 +262,7 @@ export async function checkAllServices(): Promise<{
     });
 
     return {
+      vpsServers: [],
       gameServers: [],
       clientServices: [],
       webServices: [],
