@@ -9,14 +9,7 @@ export default async (client: Client) => {
   
   // Set up rotating bot status
   const statuses = [
-    { name: 'Watching the NodeByte Services', type: ActivityType.Custom },
-    { name: 'Listening to support tickets', type: ActivityType.Custom },
-    { name: 'Watching FiveM servers', type: ActivityType.Custom },
-    { name: '/help for commands', type: ActivityType.Custom },
-    { name: 'Watching NodeByte grow', type: ActivityType.Custom },
-    { name: 'Listening for moderation', type: ActivityType.Custom },
-    { name: 'Watching service statuses', type: ActivityType.Custom },
-    { name: 'Listening to support requests', type: ActivityType.Custom },
+    { name: 'Trapped in a world of chaos!', type: ActivityType.Custom }
   ];
 
   // Set initial random status
