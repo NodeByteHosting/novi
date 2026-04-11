@@ -52,7 +52,8 @@ logger.info('Starting bot initialization...');
     }
 
     // Initialize services config if not already in DB
-    if (!appConfig?.vpsServers && process.env.SERVICES_CONFIG) {
+    const serviceConfig = await db.getServiceConfig();
+    if (!serviceConfig?.vpsServers && process.env.SERVICES_CONFIG) {
       try {
         const servicesEnv = JSON.parse(process.env.SERVICES_CONFIG);
         logger.info('Initializing database with environment services config', {
