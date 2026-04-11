@@ -241,6 +241,16 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               return;
             }
 
+            // Only allow support role members to claim tickets
+            const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
+            const member = interaction.member as GuildMember;
+            if (!supportRoles || !member.roles.cache.some(role => supportRoles.includes(role.id))) {
+              return interaction.reply({ 
+                content: '❌ Only support staff can claim tickets.', 
+                flags: [64] 
+              });
+            }
+
             const ticket = await db.getTicket(ticketThread.id);
             if (!ticket) {
               logger.warn('Ticket not found in database', {
@@ -376,17 +386,19 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 });
               });
 
-              // Re-add all support staff members to thread
+              // Re-add online support staff members to thread
               try {
                 const config = await db.getOrCreateGuildConfig(ticketThread.guild?.id || '');
                 const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
                 
                 if (supportRoles && supportRoles.length > 0 && ticketThread.guild) {
-                  const members = await ticketThread.guild.members.fetch();
+                  const members = await ticketThread.guild.members.fetch({ withPresences: true });
                   
                   for (const [, member] of members) {
-                    // If member has support role, add them back
-                    if (member.roles.cache.some(role => supportRoles.includes(role.id))) {
+                    // If member has support role and is online, add them back
+                    const hasSupportRole = member.roles.cache.some(role => supportRoles.includes(role.id));
+                    const isOnline = member.presence && member.presence.status !== 'offline';
+                    if (hasSupportRole && isOnline) {
                       try {
                         await ticketThread.members.add(member.id);
                       } catch (addErr) {
@@ -568,15 +580,33 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 // Add the ticket creator
                 await thread.members.add(user.id);
 
-                // Add all members with support roles to the thread
+                // Grant the ticket creator SendMessagesInThreads on the parent channel
+                // so they can continue sending messages in the private thread
+                try {
+                  await ticketChannel.permissionOverwrites.create(user.id, {
+                    SendMessagesInThreads: true,
+                    ViewChannel: true,
+                  }, { reason: `Ticket thread created for ${user.tag}` });
+                } catch (permErr) {
+                  logger.warn('Failed to set permission override for ticket creator', {
+                    context: 'ModalHandler',
+                    error: permErr,
+                    threadId: thread.id,
+                    userId: user.id
+                  });
+                }
+
+                // Add online members with support roles to the thread
                 const supportRoles = await db.getSupportRoles(guild.id);
                 if (supportRoles && supportRoles.length > 0) {
                   // Fetch all guild members to check for support roles
-                  const members = await guild.members.fetch();
+                  const members = await guild.members.fetch({ withPresences: true });
                   
                   for (const [, member] of members) {
-                    // Check if member has any support role
-                    if (member.roles.cache.some(role => supportRoles.includes(role.id))) {
+                    // Check if member has any support role and is online (not offline)
+                    const hasSupportRole = member.roles.cache.some(role => supportRoles.includes(role.id));
+                    const isOnline = member.presence && member.presence.status !== 'offline';
+                    if (hasSupportRole && isOnline) {
                       try {
                         await thread.members.add(member.id);
                       } catch (roleErr) {
@@ -924,6 +954,25 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
             // Close and archive the thread
             try {
               await db.closeTicket(ticketThread.id, closedBy.id, closeReason);
+
+              // Remove the ticket creator's permission override from the parent channel
+              try {
+                const parentChannel = ticketThread.parent as TextChannel;
+                if (parentChannel) {
+                  await parentChannel.permissionOverwrites.delete(
+                    ticket.userId,
+                    `Ticket ${ticketThread.id} closed`
+                  );
+                }
+              } catch (permErr) {
+                logger.warn('Failed to remove permission override for ticket creator', {
+                  context: 'ModalHandler',
+                  error: permErr,
+                  threadId: ticketThread.id,
+                  userId: ticket.userId
+                });
+              }
+
               await ticketThread.send({ content: `🔒 Ticket closed by ${closedBy.toString()}. This thread will be archived in 5 seconds.` });
               
               logger.info('Ticket closed successfully', {
