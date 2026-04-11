@@ -88,22 +88,12 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
             const title = titleMatch ? titleMatch[1] : 'Announcement';
             const content = contentMatch ? contentMatch[1].trim() : 'No content provided';
 
-            // Determine color based on type
-            const color = type === 'changelog' ? 0x3b82f6 : 0x8b5cf6; // Blue for changelog, Purple for announcement
-
-            const embed = new EmbedBuilder()
-              .setColor(color)
-              .setTitle(`${type === 'changelog' ? '📝' : '📢'} ${title}`)
-              .setDescription(content)
-              .setAuthor({
-                name: interaction.user.username,
-                iconURL: interaction.user.displayAvatarURL()
-              })
-              .setTimestamp()
-              .setFooter({ text: `© Copyright 2024 - 2026 NodeByte LTD` });
+            // Format message with markdown support
+            const icon = type === 'changelog' ? '📝' : '📢';
+            const formattedMessage = `${icon} **${title}**\n\n${content}\n\n---\n*Posted by ${interaction.user.username} • <t:${Math.floor(Date.now() / 1000)}:f>*`;
 
             try {
-              const sentMessage = await channel.send({ embeds: [embed] });
+              const sentMessage = await channel.send({ content: formattedMessage });
 
               // Save announcement to database
               const announcement = await db.createAnnouncement(
@@ -113,7 +103,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 type,
                 title,
                 content,
-                color
+                0 // color not used for plain messages
               );
 
               if (announcement) {
@@ -1159,8 +1149,12 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
           const row = new ActionRowBuilder<any>().addComponents(ChannelSelect);
 
+          // Create preview showing how it will look
+          const icon = type === 'changelog' ? '📝' : '📢';
+          const previewMessage = `${icon} **${title}**\n\n${content}\n\n---\n*Posted by ${interaction.user.username} • <t:${Math.floor(Date.now() / 1000)}:f>*`;
+
           await interaction.reply({
-            content: `📝 **${type === 'changelog' ? 'Changelog' : 'Announcement'} Preview:**\n\n**Title:** ${title}\n\n**Content:**\n${content}\n\nPlease select the channel where you'd like to send this.`,
+            content: `**${type === 'changelog' ? 'Changelog' : 'Announcement'} Preview:**\n\n${previewMessage}\n\n---\nPlease select the channel where you'd like to send this:`,
             components: [row],
             flags: [64]
           });
