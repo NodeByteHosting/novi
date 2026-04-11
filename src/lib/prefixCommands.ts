@@ -128,18 +128,3 @@ export function formatCommand(cmd: PrefixCommandMetadata): string {
     : '';
   return `\`!${cmd.name}\`${aliasText} - ${cmd.description}`;
 }
-
-/**
- * Get all unique categories
- */
-export function getAllCategories(): string[] {
-  return [...new Set(PREFIX_COMMANDS.map(cmd => cmd.category))];
-}
-
-/**
- * Format a command for display
- */
-export function formatCommand(cmd: PrefixCommandMetadata): string {
-  const aliases = cmd.aliases?.length ? ` (aliases: ${cmd.aliases.map(a => `!${a}`).join(', ')})` : '';
-  return `**!${cmd.name}**${aliases} - ${cmd.description}`;
-}

@@ -72,4 +72,4 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     console.error('Failed to reload commands:', err);
     await interaction.editReply({ content: '❌ Failed to reload commands.' });
   }
-}}
+}
