@@ -29,26 +29,38 @@ logger.info('Starting bot initialization...');
   try {
     const appConfig = await db.getAppConfig();
     
-    // Initialize guild IDs if not already in DB
-    if (!appConfig?.guildIds && guildIds.length > 0) {
-      logger.info('Initializing database with environment guild IDs', {
-        context: 'DBInitialization',
-        count: guildIds.length
-      });
-      await db.setGuildIds(guildIds);
+    // Merge and sync guild IDs: DB + new env IDs
+    if (guildIds.length > 0) {
+      const existingGuildIds = appConfig?.guildIds ? JSON.parse(appConfig.guildIds) : [];
+      const mergedGuildIds = Array.from(new Set([...existingGuildIds, ...guildIds]));
+      
+      if (mergedGuildIds.length > existingGuildIds.length) {
+        logger.info('Syncing new guild IDs from environment to database', {
+          context: 'DBInitialization',
+          previous: existingGuildIds.length,
+          merged: mergedGuildIds.length
+        });
+        await db.setGuildIds(mergedGuildIds);
+      }
     }
     
-    // Initialize dev IDs if not already in DB
+    // Merge and sync dev IDs: DB + new env IDs
     const devIdsEnv = process.env.DEV_IDS 
       ? process.env.DEV_IDS.split(',').map(id => id.trim())
       : [];
     
-    if (!appConfig?.devIds && devIdsEnv.length > 0) {
-      logger.info('Initializing database with environment dev IDs', {
-        context: 'DBInitialization',
-        count: devIdsEnv.length
-      });
-      await db.setDevIds(devIdsEnv);
+    if (devIdsEnv.length > 0) {
+      const existingDevIds = appConfig?.devIds ? JSON.parse(appConfig.devIds) : [];
+      const mergedDevIds = Array.from(new Set([...existingDevIds, ...devIdsEnv]));
+      
+      if (mergedDevIds.length > existingDevIds.length) {
+        logger.info('Syncing new dev IDs from environment to database', {
+          context: 'DBInitialization',
+          previous: existingDevIds.length,
+          merged: mergedDevIds.length
+        });
+        await db.setDevIds(mergedDevIds);
+      }
     }
 
     // Initialize services config if not already in DB

@@ -1,4 +1,4 @@
-import { PrismaClient, ModerationLog, Warning, Ticket, GuildConfig, AppConfig, ServiceConfig } from '@prisma/client';
+import { PrismaClient, ModerationLog, Warning, Ticket, GuildConfig, AppConfig, ServiceConfig, Announcement } from '@prisma/client';
 import { EmbedBuilder, TextChannel, User, Collection } from 'discord.js';
 import { logger } from './logger';
 
@@ -1037,6 +1037,77 @@ export default {
         error: err
       });
       return false;
+    }
+  },
+
+  async createAnnouncement(guildId: string, channelId: string, authorId: string, type: string, title: string, content: string, color?: number): Promise<any | null> {
+    try {
+      const result = await prisma.announcement.create({
+        data: {
+          guildId,
+          channelId,
+          authorId,
+          type,
+          title,
+          content,
+          color: color || 3447003 // default Discord blurple
+        }
+      });
+      logger.debug('Announcement created', {
+        context: 'Database',
+        guildId,
+        authorId,
+        type
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to create announcement', {
+        context: 'Database',
+        error: err,
+        guildId,
+        authorId
+      });
+      return null;
+    }
+  },
+
+  async updateAnnouncementMessageId(announcementId: number, messageId: string): Promise<boolean> {
+    try {
+      await prisma.announcement.update({
+        where: { id: announcementId },
+        data: { messageId }
+      });
+      logger.debug('Announcement message ID updated', {
+        context: 'Database',
+        announcementId,
+        messageId
+      });
+      return true;
+    } catch (err) {
+      logger.error('Failed to update announcement message ID', {
+        context: 'Database',
+        error: err,
+        announcementId
+      });
+      return false;
+    }
+  },
+
+  async getAnnouncements(guildId: string, limit: number = 10): Promise<any[]> {
+    try {
+      const results = await prisma.announcement.findMany({
+        where: { guildId },
+        orderBy: { createdAt: 'desc' },
+        take: limit
+      });
+      return results;
+    } catch (err) {
+      logger.error('Failed to fetch announcements', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return [];
     }
   }
 };

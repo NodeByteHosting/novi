@@ -146,3 +146,21 @@ model ServiceConfig {
 
   @@map("service_config")
 }
+
+model Announcement {
+  id              Int      @id @default(autoincrement())
+  guildId         String   @map("guild_id")
+  channelId       String   @map("channel_id") // Channel where announcement was sent
+  messageId       String?  @map("message_id") // Discord message ID for tracking
+  authorId        String   @map("author_id") // Developer who created it
+  type            String   @default("announcement") // "announcement" or "changelog"
+  title           String
+  content         String   @db.Text
+  color           Int      @default(3447003) // Embed color (default: blurple)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("announcements")
+  @@index([guildId])
+  @@index([channelId])
+  @@index([authorId])
+}

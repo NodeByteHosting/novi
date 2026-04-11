@@ -1,4 +1,4 @@
-import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection, StringSelectMenuBuilder } from 'discord.js';
+import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection, StringSelectMenuBuilder, ChannelSelectMenuBuilder } from 'discord.js';
 import db from '../lib/db';
 import { logger } from '../lib/logger';
 import { ExtendedClient } from '../types';
@@ -59,6 +59,102 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
     
     if (interaction.isStringSelectMenu()) {
       try {
+        // Handle changelog channel selection
+        if (interaction.customId.startsWith('changelog_channel_select_')) {
+          try {
+            const selectedChannelId = interaction.values[0];
+            const customIdParts = interaction.customId.split('_');
+            const type = customIdParts[3]; // 'changelog' or 'announcement'
+
+            const guild = interaction.guild;
+            if (!guild) {
+              return interaction.reply({ content: '❌ Guild not found.', flags: [64] });
+            }
+
+            const channel = guild.channels.cache.get(selectedChannelId) as TextChannel;
+            if (!channel || !channel.isTextBased()) {
+              return interaction.reply({
+                content: '❌ Selected channel is not a text channel.',
+                flags: [64]
+              });
+            }
+
+            // Extract title and content from the original message
+            const originalMessage = interaction.message;
+            const messageContent = originalMessage.content;
+            const titleMatch = messageContent.match(/\*\*Title:\*\* (.+?)\n/);
+            const contentMatch = messageContent.match(/\*\*Content:\*\*\n(.+?)(?:\n\nPlease select|$)/s);
+
+            const title = titleMatch ? titleMatch[1] : 'Announcement';
+            const content = contentMatch ? contentMatch[1].trim() : 'No content provided';
+
+            // Determine color based on type
+            const color = type === 'changelog' ? 0x3b82f6 : 0x8b5cf6; // Blue for changelog, Purple for announcement
+
+            const embed = new EmbedBuilder()
+              .setColor(color)
+              .setTitle(`${type === 'changelog' ? '📝' : '📢'} ${title}`)
+              .setDescription(content)
+              .setAuthor({
+                name: interaction.user.username,
+                iconURL: interaction.user.displayAvatarURL()
+              })
+              .setTimestamp()
+              .setFooter({ text: `© Copyright 2024 - 2026 NodeByte LTD` });
+
+            try {
+              const sentMessage = await channel.send({ embeds: [embed] });
+
+              // Save announcement to database
+              const announcement = await db.createAnnouncement(
+                guild.id,
+                selectedChannelId,
+                interaction.user.id,
+                type,
+                title,
+                content,
+                color
+              );
+
+              if (announcement) {
+                await db.updateAnnouncementMessageId(announcement.id, sentMessage.id);
+              }
+
+              await interaction.reply({
+                content: `✅ ${type === 'changelog' ? 'Changelog' : 'Announcement'} posted successfully to ${channel.toString()}!`,
+                flags: [64]
+              });
+
+              logger.debug('Changelog/Announcement sent successfully', {
+                context: 'ChangelogModalHandler',
+                userId: interaction.user.id,
+                type,
+                channelId: selectedChannelId,
+                announcementId: announcement?.id
+              });
+            } catch (sendErr) {
+              logger.error('Failed to send announcement to channel', {
+                context: 'ChangelogModalHandler',
+                error: sendErr,
+                channelId: selectedChannelId
+              });
+              await interaction.reply({
+                content: '❌ Failed to post announcement. Please ensure the bot has permission to send messages in that channel.',
+                flags: [64]
+              });
+            }
+          } catch (err) {
+            logger.interactionError('Error processing channel selection for changelog', interaction, err);
+            if (!interaction.replied) {
+              await interaction.reply({
+                content: '❌ An error occurred while posting your announcement.',
+                flags: [64]
+              });
+            }
+          }
+          return;
+        }
+
         if (interaction.customId === 'rr_select_1') {
           const values = interaction.values;
           const guild = interaction.guild;
@@ -1025,6 +1121,70 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
           }
         } catch (err) {
           logger.interactionError('Error in ticket close modal handler', interaction, err);
+        }
+        return;
+      }
+
+      // Handle changelog/announcement creation modal submission
+      if (interaction.customId.startsWith('changelog_') && interaction.customId.includes('_step1_')) {
+        try {
+          const parts = interaction.customId.split('_');
+          const type = parts[1]; // 'changelog' or 'announcement'
+          const userId = parts[3]; // User ID from customId
+          
+          if (interaction.user.id !== userId) {
+            return interaction.reply({
+              content: '❌ You are not authorized to submit this form.',
+              flags: [64]
+            });
+          }
+
+          const title = interaction.fields.getTextInputValue('changelog_title');
+          const content = interaction.fields.getTextInputValue('changelog_content');
+          const guild = interaction.guild;
+
+          if (!guild) {
+            logger.warn('Guild not found in modal interaction', {
+              context: 'ChangelogModalHandler',
+              userId: interaction.user.id
+            });
+            return interaction.reply({ content: '❌ Guild not found.', flags: [64] });
+          }
+
+          // Create channel select menu for the dev to choose where to post
+          const ChannelSelect = new ChannelSelectMenuBuilder()
+            .setCustomId(`changelog_channel_select_${type}_${title.substring(0, 20)}_${Date.now()}`)
+            .setPlaceholder('Select channel to send announcement')
+            .addChannelTypes(ChannelType.GuildText);
+
+          const row = new ActionRowBuilder<any>().addComponents(ChannelSelect);
+
+          await interaction.reply({
+            content: `📝 **${type === 'changelog' ? 'Changelog' : 'Announcement'} Preview:**\n\n**Title:** ${title}\n\n**Content:**\n${content}\n\nPlease select the channel where you'd like to send this.`,
+            components: [row],
+            flags: [64]
+          });
+
+          logger.debug('Changelog modal submitted, waiting for channel selection', {
+            context: 'ChangelogModalHandler',
+            userId: interaction.user.id,
+            type
+          });
+        } catch (err) {
+          logger.interactionError('Error processing changelog modal', interaction, err);
+          if (!interaction.replied) {
+            try {
+              await interaction.reply({
+                content: '❌ An error occurred while processing your announcement.',
+                flags: [64]
+              });
+            } catch (replyErr) {
+              logger.error('Failed to send error reply', {
+                context: 'ChangelogModalHandler',
+                error: replyErr
+              });
+            }
+          }
         }
         return;
       }
