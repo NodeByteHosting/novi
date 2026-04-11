@@ -1,4 +1,12 @@
 import { Message } from 'discord.js';
+import { PrefixCommandMetadata } from '../lib/prefixCommands';
+
+export const metadata: PrefixCommandMetadata = {
+  name: 'billing',
+  description: 'Quick link to the billing and account management',
+  category: '🎛️ Panel & Billing',
+  aliases: ['b']
+};
 
 export default async (message: Message, args: string[]) => {
   const targetUser = message.reference && message.reference.messageId

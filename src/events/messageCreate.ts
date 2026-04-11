@@ -1,4 +1,4 @@
-import { Client, Message, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes } from 'discord.js';
+import { Client, Message, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, REST, Routes, Collection } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../lib/logger';
@@ -6,6 +6,35 @@ import { isMalicious } from '../lib/malwareFilter';
 import db from '../lib/db';
 
 const PREFIX = '!';
+
+// Cache for allowed guild IDs (for prefix commands) with TTL
+const allowedGuildsCache = new Collection<string, { guilds: string[]; expiresAt: number }>();
+const GUILDS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getAllowedGuildIds(): Promise<string[]> {
+  const cached = allowedGuildsCache.get('allowed_guilds');
+  
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.guilds;
+  }
+
+  // Merge env var guild IDs with database guild IDs
+  const envGuildIds = process.env.GUILD_IDS
+    ? process.env.GUILD_IDS.split(',').map(id => id.trim())
+    : process.env.GUILD_ID
+      ? [process.env.GUILD_ID]
+      : [];
+
+  const dbGuildIds = await db.getGuildIds();
+  const allGuildIds = Array.from(new Set([...envGuildIds, ...dbGuildIds]));
+
+  allowedGuildsCache.set('allowed_guilds', {
+    guilds: allGuildIds,
+    expiresAt: Date.now() + GUILDS_CACHE_TTL
+  });
+
+  return allGuildIds;
+}
 
 // Command aliases mapping
 const COMMAND_ALIASES: Record<string, string> = {
@@ -98,13 +127,11 @@ export default async (client: Client, message: Message) => {
 
   // Handle prefix commands (! prefix)
   if (message.content.startsWith(PREFIX)) {
-    // Get main guild ID (first GUILD_ID from env)
-    const mainGuildId = process.env.GUILD_IDS
-      ? process.env.GUILD_IDS.split(',')[0]?.trim()
-      : process.env.GUILD_ID;
+    // Get all allowed guilds (from env and database)
+    const allowedGuilds = await getAllowedGuildIds();
 
-    // Only allow prefix commands in the main guild
-    if (!mainGuildId || message.guildId !== mainGuildId) {
+    // Only allow prefix commands in configured guilds
+    if (!allowedGuilds.includes(message.guildId || '')) {
       await message.reply({
         content: '❌ These commands are unavailable in this guild.',
         flags: ['SuppressEmbeds']
@@ -183,9 +210,17 @@ export default async (client: Client, message: Message) => {
           // Clear global commands
           await rest.put(Routes.applicationCommands(clientId), { body: [] });
           
-          // Clear guild commands if GUILD_ID is set
-          if (process.env.GUILD_ID) {
-            await rest.put(Routes.applicationGuildCommands(clientId, process.env.GUILD_ID), { body: [] });
+          // Clear guild commands for all configured guilds
+          const guildsToClean = await getAllowedGuildIds();
+          for (const guildId of guildsToClean) {
+            try {
+              await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+            } catch (err) {
+              logger.debug(`Failed to clear commands for guild ${guildId}`, {
+                context: 'MessageCreate',
+                error: err
+              });
+            }
           }
 
           await msg.edit('✅ Successfully cleared all slash commands cache.');
@@ -231,14 +266,30 @@ export default async (client: Client, message: Message) => {
           const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
           const clientId = process.env.CLIENT_ID!;
 
-          // Register to guild for instant updates (dev) OR globally (production)
-          if (process.env.GUILD_ID) {
-            await rest.put(
-              Routes.applicationGuildCommands(clientId, process.env.GUILD_ID),
-              { body: commands }
-            );
+          // Register to all configured guilds for instant updates (dev) OR globally (production)
+          const guildsToRegister = await getAllowedGuildIds();
+          if (guildsToRegister.length > 0) {
+            for (const guildId of guildsToRegister) {
+              try {
+                await rest.put(
+                  Routes.applicationGuildCommands(clientId, guildId),
+                  { body: commands }
+                );
+                logger.debug(`Reloaded ${commands.length} commands in guild ${guildId}`, {
+                  context: 'MessageCreate'
+                });
+              } catch (err) {
+                logger.error(`Failed to reload commands in guild ${guildId}`, {
+                  context: 'MessageCreate',
+                  error: err
+                });
+              }
+            }
           } else {
             await rest.put(Routes.applicationCommands(clientId), { body: commands });
+            logger.debug('Reloaded commands globally', {
+              context: 'MessageCreate'
+            });
           }
 
           await msg.edit(`✅ Successfully reloaded ${commands.length} slash commands.\n\n**Commands:**\n${commands.map(c => `• /${c.name}`).join('\n')}`);

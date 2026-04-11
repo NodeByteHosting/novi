@@ -1,4 +1,11 @@
 import { Message } from 'discord.js';
+import { PrefixCommandMetadata } from '../lib/prefixCommands';
+
+export const metadata: PrefixCommandMetadata = {
+  name: 'java',
+  description: 'Java version requirements for different Minecraft versions',
+  category: '🔧 Server Configuration'
+};
 
 export default async (message: Message, args: string[]) => {
   const targetUser = message.reference && message.reference.messageId

@@ -1,7 +1,10 @@
 import { Message } from 'discord.js';
-import { getAllCategories, getCommandsByCategory, formatCommand } from '../lib/prefixCommands';
+import { getAllCategories, getCommandsByCategory, formatCommand, loadPrefixCommandsMetadata } from '../lib/prefixCommands';
 
 export default async (message: Message, args: string[]) => {
+  // Load metadata dynamically from actual command files
+  await loadPrefixCommandsMetadata();
+  
   const categories = getAllCategories();
   
   const fields = categories.map(category => {

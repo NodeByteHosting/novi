@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, REST, Routes } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
+import db from '../../lib/db';
 
 export const data = new SlashCommandBuilder()
   .setName('reload')
@@ -8,7 +9,7 @@ export const data = new SlashCommandBuilder()
   .setDMPermission(false);
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  const devIds = process.env.DEV_IDS?.split(',') || [];
+  const devIds = await db.getDevIds();
   
   if (!devIds.includes(interaction.user.id)) {
     return interaction.reply({ content: '❌ This command is for developers only.', flags: [64] });
@@ -47,21 +48,28 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN!);
     const clientId = process.env.CLIENT_ID!;
 
-    // Register to guild for instant updates (dev) OR globally (production)
-    if (process.env.GUILD_ID) {
-      await rest.put(
-        Routes.applicationGuildCommands(clientId, process.env.GUILD_ID),
-        { body: commands }
-      );
+    // Register to all configured guilds for instant updates (dev) OR globally (production)
+    const guildIds = await db.getGuildIds();
+    if (guildIds.length > 0) {
+      for (const guildId of guildIds) {
+        try {
+          await rest.put(
+            Routes.applicationGuildCommands(clientId, guildId),
+            { body: commands }
+          );
+        } catch (err) {
+          console.error(`Failed to reload commands in guild ${guildId}:`, err);
+        }
+      }
     } else {
       await rest.put(Routes.applicationCommands(clientId), { body: commands });
     }
 
     await interaction.editReply({ 
-      content: `✅ Successfully reloaded ${commands.length} slash commands.\n\nCommands registered:\n${commands.map(c => `• /${c.name}`).join('\n')}` 
+      content: `✅ Successfully reloaded ${commands.length} slash commands${guildIds.length > 0 ? ` in ${guildIds.length} guild(s)` : ' globally'}\n\nCommands registered:\n${commands.map(c => `• /${c.name}`).join('\n')}` 
     });
   } catch (err) {
     console.error('Failed to reload commands:', err);
     await interaction.editReply({ content: '❌ Failed to reload commands.' });
   }
-}
+}}

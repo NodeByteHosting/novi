@@ -1,11 +1,25 @@
 import { Client, ActivityType, EmbedBuilder, TextChannel, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import db from '../lib/db';
 import { logger } from '../lib/logger';
+import { loadPrefixCommandsMetadata } from '../lib/prefixCommands';
 
 export default async (client: Client) => {
   logger.info(`Bot is ready and logged in as: ${client.user?.tag}`, {
     context: 'ReadyEvent'
   });
+
+  // Load prefix commands metadata for the help command
+  try {
+    await loadPrefixCommandsMetadata();
+    logger.info('Prefix commands metadata loaded successfully', {
+      context: 'ReadyEvent'
+    });
+  } catch (err) {
+    logger.error('Failed to load prefix commands metadata', {
+      context: 'ReadyEvent',
+      error: err
+    });
+  }
   
   // Set up rotating bot status
   const statuses = [

@@ -1,8 +1,11 @@
 /**
  * Prefix Commands Metadata
- * Defines all available prefix commands with their descriptions and categories
- * This is the single source of truth for the help command
+ * Dynamically loads all prefix commands from the filesystem
  */
+
+import fs from 'fs';
+import path from 'path';
+import { logger } from './logger';
 
 export interface PrefixCommandMetadata {
   name: string;
@@ -11,142 +14,119 @@ export interface PrefixCommandMetadata {
   aliases?: string[];
 }
 
-export const PREFIX_COMMANDS: PrefixCommandMetadata[] = [
-  // Documentation & Resources
-  {
-    name: 'docs',
-    description: 'Access NodeByte knowledge base with guides for all game types',
-    category: '📖 Documentation & Resources'
-  },
-  {
-    name: 'faq',
-    description: 'Frequently asked questions and common issues',
-    category: '📖 Documentation & Resources'
-  },
-  {
-    name: 'support',
-    description: 'General support guidelines and how to get help',
-    category: '📖 Documentation & Resources'
-  },
+export interface PrefixCommandModule {
+  default: (message: any, args: string[]) => Promise<void> | void;
+  metadata?: PrefixCommandMetadata;
+}
 
-  // Server Troubleshooting
-  {
-    name: 'lag',
-    description: 'Diagnose and fix server lag, performance issues, and low TPS',
-    category: '⚙️ Server Troubleshooting'
-  },
-  {
-    name: 'crash',
-    description: 'Diagnose server crashes and find solutions',
-    category: '⚙️ Server Troubleshooting'
-  },
-  {
-    name: 'logs',
-    description: 'Access, view, and share server crash logs',
-    category: '⚙️ Server Troubleshooting'
-  },
-  {
-    name: 'status',
-    description: 'Check server status, uptime, and performance metrics',
-    category: '⚙️ Server Troubleshooting'
-  },
+let commandMetadataCache: PrefixCommandMetadata[] | null = null;
 
-  // Service Monitoring
-  {
-    name: 'services',
-    description: 'Monitor NodeByte infrastructure status (game servers, web services)',
-    category: '🔍 Service Monitoring'
-  },
-
-  // Server Configuration
-  {
-    name: 'java',
-    description: 'Java version requirements for different Minecraft versions',
-    category: '🔧 Server Configuration'
-  },
-  {
-    name: 'update',
-    description: 'Update your Minecraft server to a different version',
-    category: '🔧 Server Configuration'
-  },
-  {
-    name: 'mods',
-    description: 'Install and manage mods on your server',
-    category: '🔧 Server Configuration'
-  },
-  {
-    name: 'plugins',
-    description: 'Install and manage plugins on your server',
-    category: '🔧 Server Configuration'
-  },
-
-  // Panel & Billing
-  {
-    name: 'panel',
-    description: 'Quick link to the game server control panel',
-    category: '🎛️ Panel & Billing',
-    aliases: ['p']
-  },
-  {
-    name: 'billing',
-    description: 'Quick link to the billing and account management',
-    category: '🎛️ Panel & Billing',
-    aliases: ['b']
-  },
-  {
-    name: 'fullscreen',
-    description: 'Open panel in fullscreen mode',
-    category: '🎛️ Panel & Billing'
-  },
-
-  // Server Info
-  {
-    name: 'ping',
-    description: 'Check bot latency and response time',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'uptime',
-    description: 'Display bot uptime since last restart',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'botinfo',
-    description: 'Display bot information and statistics',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'serverinfo',
-    description: 'Show information about your Discord server',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'userinfo',
-    description: 'Display information about a Discord user',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'roleinfo',
-    description: 'Show detailed information about a role',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'channelinfo',
-    description: 'Display information about a channel',
-    category: '💡 Server Info'
-  },
-  {
-    name: 'links',
-    description: 'Show helpful links (billing, panel, knowledge base, etc)',
-    category: '💡 Server Info'
+/**
+ * Dynamically load all prefix commands from the filesystem
+ * Each command module should export a 'metadata' object
+ */
+export async function loadPrefixCommandsMetadata(): Promise<PrefixCommandMetadata[]> {
+  if (commandMetadataCache) {
+    return commandMetadataCache;
   }
-];
+
+  try {
+    const prefixDir = path.join(__dirname, '../prefix');
+    if (!fs.existsSync(prefixDir)) {
+      logger.warn('Prefix commands directory not found', { context: 'PrefixCommands' });
+      return [];
+    }
+
+    const files = fs.readdirSync(prefixDir).filter(
+      file => file.endsWith('.ts') || file.endsWith('.js')
+    );
+
+    const commands: PrefixCommandMetadata[] = [];
+
+    for (const file of files) {
+      try {
+        // Skip help.ts and other system files
+        if (file === 'help.ts' || file === 'help.js') continue;
+
+        const filePath = path.join(prefixDir, file);
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const module: PrefixCommandModule = require(filePath);
+
+        // If module exports metadata, use it
+        if (module.metadata) {
+          commands.push(module.metadata);
+        }
+      } catch (err) {
+        logger.debug(`Failed to load metadata from prefix command ${file}`, {
+          context: 'PrefixCommands',
+          error: err
+        });
+      }
+    }
+
+    // Sort by category then by name for consistent display
+    commands.sort((a, b) => {
+      if (a.category !== b.category) {
+        return a.category.localeCompare(b.category);
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    commandMetadataCache = commands;
+    logger.info(`Loaded ${commands.length} prefix command metadata entries`, {
+      context: 'PrefixCommands'
+    });
+
+    return commands;
+  } catch (err) {
+    logger.error('Failed to load prefix commands metadata', {
+      context: 'PrefixCommands',
+      error: err
+    });
+    return [];
+  }
+}
+
+/**
+ * Get all unique categories from loaded commands
+ */
+export function getAllCategories(): string[] {
+  if (!commandMetadataCache) {
+    logger.warn('Command metadata not loaded yet', { context: 'PrefixCommands' });
+    return [];
+  }
+
+  const categories = new Set<string>();
+  commandMetadataCache.forEach(cmd => categories.add(cmd.category));
+  return Array.from(categories).sort();
+}
 
 /**
  * Get all commands for a specific category
  */
 export function getCommandsByCategory(category: string): PrefixCommandMetadata[] {
-  return PREFIX_COMMANDS.filter(cmd => cmd.category === category);
+  if (!commandMetadataCache) {
+    return [];
+  }
+
+  return commandMetadataCache.filter(cmd => cmd.category === category);
+}
+
+/**
+ * Get all loaded commands
+ */
+export function getAllCommands(): PrefixCommandMetadata[] {
+  return commandMetadataCache || [];
+}
+
+/**
+ * Format a command for display in help
+ */
+export function formatCommand(cmd: PrefixCommandMetadata): string {
+  const aliasText = cmd.aliases && cmd.aliases.length > 0 
+    ? ` (${cmd.aliases.map(a => `\`!${a}\``).join(', ')})`
+    : '';
+  return `\`!${cmd.name}\`${aliasText} - ${cmd.description}`;
 }
 
 /**

@@ -1,5 +1,12 @@
 import { Message, EmbedBuilder } from 'discord.js';
 import { checkAllServices } from '../lib/serviceStatus';
+import { PrefixCommandMetadata } from '../lib/prefixCommands';
+
+export const metadata: PrefixCommandMetadata = {
+  name: 'services',
+  description: 'Monitor NodeByte infrastructure status (game servers, web services)',
+  category: '🔍 Service Monitoring'
+};
 
 export default async (message: Message, args: string[]) => {
   const targetUser = message.reference && message.reference.messageId

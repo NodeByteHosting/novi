@@ -176,8 +176,12 @@ try {
           try {
             // Register slash commands before calling the handler
             try {
-              if (guildIds.length === 0) {
-                logger.warn('GUILD_ID or GUILD_IDS not set, skipping command registration', {
+              // Get guild IDs from both env vars (startup) and database (dynamic updates)
+              const dbGuildIds = await db.getGuildIds();
+              const allGuildIds = Array.from(new Set([...guildIds, ...dbGuildIds]));
+
+              if (allGuildIds.length === 0) {
+                logger.warn('No guild IDs found in env or database, skipping command registration', {
                   context: 'CommandRegistration'
                 });
               } else {
@@ -185,19 +189,28 @@ try {
                   .map(cmd => cmd.data)
                   .filter(data => data !== undefined);
                 
-                for (const guildId of guildIds) {
+                logger.info(`Registering ${commandData.length} slash commands to ${allGuildIds.length} guild(s)`, {
+                  context: 'CommandRegistration',
+                  guilds: allGuildIds
+                });
+
+                for (const guildId of allGuildIds) {
                   const guild = client.guilds.cache.get(guildId);
                   if (guild) {
-                    logger.info(`Registering ${commandData.length} slash commands to guild ${guildId}...`, {
-                      context: 'CommandRegistration'
-                    });
-                    
-                    const registered = await guild.commands.set(commandData);
-                    logger.info(`Successfully registered ${registered.size} slash commands to guild ${guildId}`, {
-                      context: 'CommandRegistration',
-                      guildId,
-                      count: registered.size
-                    });
+                    try {
+                      const registered = await guild.commands.set(commandData);
+                      logger.info(`Registered ${registered.size} slash commands to guild ${guildId}`, {
+                        context: 'CommandRegistration',
+                        guildId,
+                        count: registered.size
+                      });
+                    } catch (err) {
+                      logger.error(`Failed to register commands to guild ${guildId}`, {
+                        context: 'CommandRegistration',
+                        error: err,
+                        guildId
+                      });
+                    }
                   } else {
                     logger.warn(`Guild ${guildId} not found in cache`, {
                       context: 'CommandRegistration'

@@ -1,4 +1,5 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, REST, Routes } from 'discord.js';
+import db from '../../lib/db';
 
 export const data = new SlashCommandBuilder()
   .setName('clearcache')
@@ -6,7 +7,7 @@ export const data = new SlashCommandBuilder()
   .setDMPermission(false);
 
 export async function execute(interaction: ChatInputCommandInteraction) {
-  const devIds = process.env.DEV_IDS?.split(',') || [];
+  const devIds = await db.getDevIds();
   
   if (!devIds.includes(interaction.user.id)) {
     return interaction.reply({ content: '❌ This command is for developers only.', flags: [64] });
@@ -21,12 +22,17 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     // Clear global commands
     await rest.put(Routes.applicationCommands(clientId), { body: [] });
     
-    // Clear guild commands if GUILD_ID is set
-    if (process.env.GUILD_ID) {
-      await rest.put(Routes.applicationGuildCommands(clientId, process.env.GUILD_ID), { body: [] });
+    // Clear guild commands for all configured guilds
+    const guildIds = await db.getGuildIds();
+    for (const guildId of guildIds) {
+      try {
+        await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+      } catch (err) {
+        console.error(`Failed to clear commands for guild ${guildId}:`, err);
+      }
     }
 
-    await interaction.editReply({ content: '✅ Successfully cleared all slash commands cache.' });
+    await interaction.editReply({ content: `✅ Successfully cleared all slash commands cache${guildIds.length > 0 ? ` from ${guildIds.length} guild(s)` : ''}` });
   } catch (err) {
     console.error('Failed to clear commands:', err);
     await interaction.editReply({ content: '❌ Failed to clear commands cache.' });
