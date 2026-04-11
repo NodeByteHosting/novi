@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { logger } from '../../lib/logger';
+import db from '../../lib/db';
 
 export const data = new SlashCommandBuilder()
   .setName('addroles')
@@ -28,14 +29,15 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ ephemeral: true });
 
   const subcommand = interaction.options.getSubcommand();
-  const memberRoleId = process.env.MEMBER_ROLE_ID;
-  const botRoleId = process.env.BOT_ROLE_ID;
+  const config = await db.getGuildConfig(interaction.guild!.id);
+  const memberRoleId = config?.memberRoleId;
+  const botRoleId = config?.botRoleId;
 
   try {
     if (subcommand === 'members') {
       if (!memberRoleId) {
         return interaction.editReply({
-          content: 'MEMBER_ROLE_ID is not configured in environment variables.',
+          content: 'Member role is not configured. Use `/config` to set it up.',
         });
       }
 
@@ -116,7 +118,7 @@ export async function execute(interaction: ChatInputCommandInteraction) {
     if (subcommand === 'bots') {
       if (!botRoleId) {
         return interaction.editReply({
-          content: 'BOT_ROLE_ID is not configured in environment variables.',
+          content: 'Bot role is not configured. Use `/config` to set it up.',
         });
       }
 

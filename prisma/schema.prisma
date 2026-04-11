@@ -126,3 +126,23 @@ model Transcript {
   @@index([slug])
   @@index([userId])
 }
+
+model AppConfig {
+  id              Int     @id @default(1) // Singleton: always use id 1
+  guildIds        String? @map("guild_ids") // JSON array of guild IDs ["123", "456", ...]
+  devIds          String? @map("dev_ids") // JSON array of developer user IDs ["789", "101112", ...]
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("app_config")
+}
+
+model ServiceConfig {
+  id              Int     @id @default(1) // Singleton: always use id 1
+  vpsServers      String? @map("vps_servers") // JSON array of {name, ip}
+  gameServers     String? @map("game_servers") // JSON array of {name, ip}
+  clientServices  String? @map("client_services") // JSON array of {name, ip}
+  webServices     String? @map("web_services") // JSON array of {name, url}
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("service_config")
+}

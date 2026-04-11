@@ -6,6 +6,7 @@ import { logger } from './lib/logger';
 import { ExtendedClient, CommandModule } from './types';
 import { createTranscriptServer } from './lib/transcriptServer';
 import { initMalwareFilter, startAutoRefresh } from './lib/malwareFilter';
+import db from './lib/db';
 
 const token = process.env.BOT_TOKEN;
 const clientId = process.env.CLIENT_ID;
@@ -22,6 +23,61 @@ if (!token) {
 }
 
 logger.info('Starting bot initialization...');
+
+// Initialize DB with environment variables if needed (migration path from env to DB)
+(async () => {
+  try {
+    const appConfig = await db.getAppConfig();
+    
+    // Initialize guild IDs if not already in DB
+    if (!appConfig?.guildIds && guildIds.length > 0) {
+      logger.info('Initializing database with environment guild IDs', {
+        context: 'DBInitialization',
+        count: guildIds.length
+      });
+      await db.setGuildIds(guildIds);
+    }
+    
+    // Initialize dev IDs if not already in DB
+    const devIdsEnv = process.env.DEV_IDS 
+      ? process.env.DEV_IDS.split(',').map(id => id.trim())
+      : [];
+    
+    if (!appConfig?.devIds && devIdsEnv.length > 0) {
+      logger.info('Initializing database with environment dev IDs', {
+        context: 'DBInitialization',
+        count: devIdsEnv.length
+      });
+      await db.setDevIds(devIdsEnv);
+    }
+
+    // Initialize services config if not already in DB
+    if (!appConfig?.vpsServers && process.env.SERVICES_CONFIG) {
+      try {
+        const servicesEnv = JSON.parse(process.env.SERVICES_CONFIG);
+        logger.info('Initializing database with environment services config', {
+          context: 'DBInitialization'
+        });
+        await db.updateServicesConfig(
+          servicesEnv.vpsServers || [],
+          servicesEnv.gameServers || [],
+          servicesEnv.clientServices || [],
+          servicesEnv.webServices || []
+        );
+      } catch (err) {
+        logger.warn('Failed to parse SERVICES_CONFIG environment variable', {
+          context: 'DBInitialization',
+          error: err
+        });
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to initialize database configuration', {
+      context: 'DBInitialization',
+      error: err
+    });
+  }
+})();
 
 const client = new Client({ 
   intents: [

@@ -53,7 +53,8 @@ export default async (client: Client, message: Message) => {
       } catch (dmErr) {
         logger.debug('Could not send DM about deleted message', { context: 'MessageCreate', userId: message.author.id });
       }
-      const logChannelId = process.env.MODERATION_LOG_CHANNEL_ID;
+      const guildConfig = message.guildId ? await db.getGuildConfig(message.guildId) : null;
+      const logChannelId = guildConfig?.logsChannelId;
       if (logChannelId && message.guild) {
         try {
           const logChannel = await message.guild.channels.fetch(logChannelId);

@@ -5,7 +5,7 @@ import { logger } from '../lib/logger';
 export default async (client: Client, member: GuildMember) => {
   try {
     const config = await db.getGuildConfig(member.guild.id);
-    const welcomeChannelId = process.env.WELCOME_CHANNEL_ID;
+    const welcomeChannelId = config?.welcomeChannelId;
     const logsChannelId = config?.logsChannelId;
     const memberRoleId = config?.memberRoleId;
 
@@ -93,7 +93,7 @@ export default async (client: Client, member: GuildMember) => {
     }
 
     // Auto-assign appropriate role based on whether member is a bot or user
-    const botRoleId = process.env.BOT_ROLE_ID;
+    const botRoleId = config?.botRoleId;
     const roleToAssign = member.user.bot ? botRoleId : memberRoleId;
     
     if (roleToAssign) {

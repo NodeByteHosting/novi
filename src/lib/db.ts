@@ -1,4 +1,4 @@
-import { PrismaClient, ModerationLog, Warning, Ticket, GuildConfig } from '@prisma/client';
+import { PrismaClient, ModerationLog, Warning, Ticket, GuildConfig, AppConfig, ServiceConfig } from '@prisma/client';
 import { EmbedBuilder, TextChannel, User, Collection } from 'discord.js';
 import { logger } from './logger';
 
@@ -857,6 +857,186 @@ export default {
         error: err,
         guildId
       });
+    }
+  },
+
+  // App Config methods (global app settings)
+  async getAppConfig() {
+    try {
+      let config = await prisma.appConfig.findUnique({
+        where: { id: 1 }
+      });
+      
+      if (!config) {
+        config = await prisma.appConfig.create({
+          data: { id: 1 }
+        });
+      }
+      
+      return config;
+    } catch (err) {
+      logger.error('Failed to get app config', {
+        context: 'Database',
+        error: err
+      });
+      return null;
+    }
+  },
+
+  async getGuildIds(): Promise<string[]> {
+    try {
+      const config = await this.getAppConfig();
+      if (!config?.guildIds) return [];
+      return JSON.parse(config.guildIds);
+    } catch (err) {
+      logger.error('Failed to parse guild IDs', {
+        context: 'Database',
+        error: err
+      });
+      return [];
+    }
+  },
+
+  async setGuildIds(guildIds: string[]): Promise<boolean> {
+    try {
+      await prisma.appConfig.upsert({
+        where: { id: 1 },
+        update: { guildIds: JSON.stringify(guildIds) },
+        create: { id: 1, guildIds: JSON.stringify(guildIds) }
+      });
+      logger.debug('Guild IDs updated', {
+        context: 'Database',
+        count: guildIds.length
+      });
+      return true;
+    } catch (err) {
+      logger.error('Failed to set guild IDs', {
+        context: 'Database',
+        error: err
+      });
+      return false;
+    }
+  },
+
+  async getDevIds(): Promise<string[]> {
+    try {
+      const config = await this.getAppConfig();
+      if (!config?.devIds) return [];
+      return JSON.parse(config.devIds);
+    } catch (err) {
+      logger.error('Failed to parse dev IDs', {
+        context: 'Database',
+        error: err
+      });
+      return [];
+    }
+  },
+
+  async setDevIds(devIds: string[]): Promise<boolean> {
+    try {
+      await prisma.appConfig.upsert({
+        where: { id: 1 },
+        update: { devIds: JSON.stringify(devIds) },
+        create: { id: 1, devIds: JSON.stringify(devIds) }
+      });
+      logger.debug('Dev IDs updated', {
+        context: 'Database',
+        count: devIds.length
+      });
+      return true;
+    } catch (err) {
+      logger.error('Failed to set dev IDs', {
+        context: 'Database',
+        error: err
+      });
+      return false;
+    }
+  },
+
+  // Service Config methods (services monitoring)
+  async getServiceConfig() {
+    try {
+      let config = await prisma.serviceConfig.findUnique({
+        where: { id: 1 }
+      });
+      
+      if (!config) {
+        config = await prisma.serviceConfig.create({
+          data: { id: 1 }
+        });
+      }
+      
+      return config;
+    } catch (err) {
+      logger.error('Failed to get service config', {
+        context: 'Database',
+        error: err
+      });
+      return null;
+    }
+  },
+
+  async getServicesConfig(): Promise<{
+    vpsServers: Array<{ name: string; ip: string }>;
+    gameServers: Array<{ name: string; ip: string }>;
+    clientServices: Array<{ name: string; ip: string }>;
+    webServices: Array<{ name: string; url: string }>;
+  }> {
+    try {
+      const config = await this.getServiceConfig();
+      return {
+        vpsServers: config?.vpsServers ? JSON.parse(config.vpsServers) : [],
+        gameServers: config?.gameServers ? JSON.parse(config.gameServers) : [],
+        clientServices: config?.clientServices ? JSON.parse(config.clientServices) : [],
+        webServices: config?.webServices ? JSON.parse(config.webServices) : []
+      };
+    } catch (err) {
+      logger.error('Failed to parse services config', {
+        context: 'Database',
+        error: err
+      });
+      return {
+        vpsServers: [],
+        gameServers: [],
+        clientServices: [],
+        webServices: []
+      };
+    }
+  },
+
+  async updateServicesConfig(
+    vpsServers: Array<{ name: string; ip: string }>,
+    gameServers: Array<{ name: string; ip: string }>,
+    clientServices: Array<{ name: string; ip: string }>,
+    webServices: Array<{ name: string; url: string }>
+  ): Promise<boolean> {
+    try {
+      await prisma.serviceConfig.upsert({
+        where: { id: 1 },
+        update: {
+          vpsServers: JSON.stringify(vpsServers),
+          gameServers: JSON.stringify(gameServers),
+          clientServices: JSON.stringify(clientServices),
+          webServices: JSON.stringify(webServices)
+        },
+        create: {
+          id: 1,
+          vpsServers: JSON.stringify(vpsServers),
+          gameServers: JSON.stringify(gameServers),
+          clientServices: JSON.stringify(clientServices),
+          webServices: JSON.stringify(webServices)
+        }
+      });
+      logger.debug('Services config updated', {
+        context: 'Database'
+      });
+      return true;
+    } catch (err) {
+      logger.error('Failed to update services config', {
+        context: 'Database',
+        error: err
+      });
+      return false;
     }
   }
 };

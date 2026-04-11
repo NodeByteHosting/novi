@@ -9,7 +9,26 @@ export default async (client: Client) => {
   
   // Set up rotating bot status
   const statuses = [
-    { name: 'Trapped in a world of chaos!', type: ActivityType.Custom }
+    { name: 'servers go brrrrr', type: ActivityType.Custom },
+    { name: 'your infrastructure', type: ActivityType.Watching },
+    { name: 'ping pong at lightspeed', type: ActivityType.Custom },
+    { name: 'tickets like a pro', type: ActivityType.Competing },
+    { name: 'the matrix', type: ActivityType.Watching },
+    { name: 'uptime: 99.99% (probably) 📈', type: ActivityType.Custom },
+    { name: 'debugging in production', type: ActivityType.Custom },
+    { name: 'with fire 🔥', type: ActivityType.Playing },
+    { name: 'your logs', type: ActivityType.Watching },
+    { name: 'nothing yet, give me a job', type: ActivityType.Custom },
+    { name: 'status.nodebyte.host', type: ActivityType.Watching },
+    { name: 'every request 👀', type: ActivityType.Custom },
+    { name: 'RAM go brrr', type: ActivityType.Custom },
+    { name: 'Skynet (but helpful)', type: ActivityType.Custom },
+    { name: 'the server rebooting', type: ActivityType.Watching },
+    { name: 'nerds', type: ActivityType.Competing },
+    { name: 'the sweet syntax', type: ActivityType.Custom },
+    { name: 'ctrl+alt+delete the chaos', type: ActivityType.Custom },
+    { name: 'I am speed ⚡', type: ActivityType.Custom },
+    { name: 'sudo make me a sandwich', type: ActivityType.Custom }
   ];
 
   // Set initial random status

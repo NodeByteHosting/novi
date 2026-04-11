@@ -1,6 +1,7 @@
 import net from 'net';
 import dns from 'dns/promises';
 import { logger } from './logger';
+import db from './db';
 
 // Custom user agent for service monitoring - can be whitelisted in Cloudflare
 const SERVICE_MONITOR_USER_AGENT = 'NodeByte-ServiceMonitor/1.0 (+https://nodebyte.host)';
@@ -201,29 +202,15 @@ export async function checkAllServices(): Promise<{
   timestamp: Date;
 }> {
   try {
-    // Parse services config from JSON environment variable
-    let vpsServers: Array<{ name: string; ip: string }> = [];
-    let gameServers: Array<{ name: string; ip: string }> = [];
-    let clientServices: Array<{ name: string; ip: string }> = [];
-    let webServices: Array<{ name: string; url: string }> = [];
-
-    if (process.env.SERVICES_CONFIG) {
-      try {
-        const config = JSON.parse(process.env.SERVICES_CONFIG);
-        vpsServers = config.vpsServers || [];
-        gameServers = config.gameServers || [];
-        clientServices = config.clientServices || [];
-        webServices = config.webServices || [];
-      } catch (parseErr) {
-        logger.error('Failed to parse SERVICES_CONFIG JSON', {
-          context: 'ServiceStatus',
-          error: parseErr instanceof Error ? parseErr.message : String(parseErr),
-        });
-      }
-    }
+    // Get services config from database
+    const config = await db.getServicesConfig();
+    const vpsServers = config.vpsServers || [];
+    const gameServers = config.gameServers || [];
+    const clientServices = config.clientServices || [];
+    const webServices = config.webServices || [];
 
     if (vpsServers.length === 0 && gameServers.length === 0 && clientServices.length === 0 && webServices.length === 0) {
-      logger.warn('No services configured - check SERVICES_CONFIG environment variable', {
+      logger.warn('No services configured - use /devconfig services set to configure', {
         context: 'ServiceStatus',
       });
     }
