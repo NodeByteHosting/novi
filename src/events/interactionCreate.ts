@@ -1,15 +1,19 @@
-import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection, StringSelectMenuBuilder, ChannelSelectMenuBuilder } from 'discord.js';
+import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuilder, ButtonStyle, ActionRowBuilder, Message, ModalBuilder, TextInputBuilder, TextInputStyle, ThreadChannel, PermissionsBitField, ChatInputCommandInteraction, StringSelectMenuInteraction, ButtonInteraction, ModalSubmitInteraction, GuildMember, Collection, StringSelectMenuBuilder, ChannelSelectMenuBuilder, ChannelSelectMenuInteraction } from 'discord.js';
 import db from '../lib/db';
 import { logger } from '../lib/logger';
 import { ExtendedClient } from '../types';
 import { generateTranscriptHTML, generateTranscriptSlug } from '../lib/transcriptGenerator';
 import { createTranscriptUrl } from '../lib/transcriptServer';
 
-type SupportedInteraction = ChatInputCommandInteraction | StringSelectMenuInteraction | ButtonInteraction | ModalSubmitInteraction;
+type SupportedInteraction = ChatInputCommandInteraction | StringSelectMenuInteraction | ChannelSelectMenuInteraction | ButtonInteraction | ModalSubmitInteraction;
+
+// Stores pending announcement data between modal submit and channel select
+const pendingAnnouncements = new Map<string, { type: string; title: string; content: string }>();
 
 function isSupportedInteraction(interaction: Interaction): interaction is SupportedInteraction {
   return interaction.isChatInputCommand() || 
          interaction.isStringSelectMenu() || 
+         interaction.isChannelSelectMenu() ||
          interaction.isButton() || 
          interaction.isModalSubmit();
 }
@@ -57,9 +61,8 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
       }
     }
     
-    if (interaction.isStringSelectMenu()) {
+    if (interaction.isChannelSelectMenu()) {
       try {
-        // Handle changelog channel selection
         if (interaction.customId.startsWith('changelog_channel_select_')) {
           try {
             const selectedChannelId = interaction.values[0];
@@ -79,31 +82,29 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               });
             }
 
-            // Extract title and content from the original message
-            const originalMessage = interaction.message;
-            const messageContent = originalMessage.content;
-            const titleMatch = messageContent.match(/\*\*Title:\*\* (.+?)\n/);
-            const contentMatch = messageContent.match(/\*\*Content:\*\*\n(.+?)(?:\n\nPlease select|$)/s);
+            // Retrieve pending announcement data stored at modal submit time
+            const pending = pendingAnnouncements.get(interaction.user.id);
+            pendingAnnouncements.delete(interaction.user.id);
 
-            const title = titleMatch ? titleMatch[1] : 'Announcement';
-            const content = contentMatch ? contentMatch[1].trim() : 'No content provided';
+            const title = pending?.title || 'Announcement';
+            const content = pending?.content || 'No content provided';
+            const resolvedType = pending?.type || type;
 
-            // Format message with markdown support
-            const icon = type === 'changelog' ? '📝' : '📢';
+            // Send as plain unembedded message with full markdown support
+            const icon = resolvedType === 'changelog' ? '📝' : '📢';
             const formattedMessage = `${icon} **${title}**\n\n${content}\n\n---\n*Posted by ${interaction.user.username} • <t:${Math.floor(Date.now() / 1000)}:f>*`;
 
             try {
               const sentMessage = await channel.send({ content: formattedMessage });
 
-              // Save announcement to database
               const announcement = await db.createAnnouncement(
                 guild.id,
                 selectedChannelId,
                 interaction.user.id,
-                type,
+                resolvedType,
                 title,
                 content,
-                0 // color not used for plain messages
+                0
               );
 
               if (announcement) {
@@ -111,14 +112,14 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               }
 
               await interaction.reply({
-                content: `✅ ${type === 'changelog' ? 'Changelog' : 'Announcement'} posted successfully to ${channel.toString()}!`,
+                content: `✅ ${resolvedType === 'changelog' ? 'Changelog' : 'Announcement'} posted successfully to ${channel.toString()}!`,
                 flags: [64]
               });
 
               logger.debug('Changelog/Announcement sent successfully', {
                 context: 'ChangelogModalHandler',
                 userId: interaction.user.id,
-                type,
+                type: resolvedType,
                 channelId: selectedChannelId,
                 announcementId: announcement?.id
               });
@@ -129,7 +130,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 channelId: selectedChannelId
               });
               await interaction.reply({
-                content: '❌ Failed to post announcement. Please ensure the bot has permission to send messages in that channel.',
+                content: '❌ Failed to post announcement. Ensure the bot has permission to send messages in that channel.',
                 flags: [64]
               });
             }
@@ -142,9 +143,14 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               });
             }
           }
-          return;
         }
+      } catch (err) {
+        logger.interactionError('Error in channel select menu handler', interaction, err);
+      }
+    }
 
+    if (interaction.isStringSelectMenu()) {
+      try {
         if (interaction.customId === 'rr_select_1') {
           const values = interaction.values;
           const guild = interaction.guild;
@@ -1141,20 +1147,21 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
             return interaction.reply({ content: '❌ Guild not found.', flags: [64] });
           }
 
-          // Create channel select menu for the dev to choose where to post
+          // Store pending data so the channel select handler can retrieve it reliably
+          pendingAnnouncements.set(interaction.user.id, { type, title, content });
+
           const ChannelSelect = new ChannelSelectMenuBuilder()
-            .setCustomId(`changelog_channel_select_${type}_${title.substring(0, 20)}_${Date.now()}`)
+            .setCustomId(`changelog_channel_select_${type}_${Date.now()}`)
             .setPlaceholder('Select channel to send announcement')
             .addChannelTypes(ChannelType.GuildText);
 
           const row = new ActionRowBuilder<any>().addComponents(ChannelSelect);
 
-          // Create preview showing how it will look
           const icon = type === 'changelog' ? '📝' : '📢';
-          const previewMessage = `${icon} **${title}**\n\n${content}\n\n---\n*Posted by ${interaction.user.username} • <t:${Math.floor(Date.now() / 1000)}:f>*`;
+          const previewContent = content.length > 500 ? content.substring(0, 500) + '...' : content;
 
           await interaction.reply({
-            content: `**${type === 'changelog' ? 'Changelog' : 'Announcement'} Preview:**\n\n${previewMessage}\n\n---\nPlease select the channel where you'd like to send this:`,
+            content: `**${type === 'changelog' ? 'Changelog' : 'Announcement'} Preview:**\n\n${icon} **${title}**\n\n${previewContent}\n\n---\nSelect a channel to post this:`,
             components: [row],
             flags: [64]
           });
