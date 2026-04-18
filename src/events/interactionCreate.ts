@@ -75,9 +75,9 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
             }
 
             const channel = guild.channels.cache.get(selectedChannelId) as TextChannel;
-            if (!channel || !channel.isTextBased()) {
+            if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement)) {
               return interaction.reply({
-                content: '❌ Selected channel is not a text channel.',
+                content: '❌ Selected channel is not a valid text or announcement channel.',
                 flags: [64]
               });
             }
@@ -1153,7 +1153,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
           const ChannelSelect = new ChannelSelectMenuBuilder()
             .setCustomId(`changelog_channel_select_${type}_${Date.now()}`)
             .setPlaceholder('Select channel to send announcement')
-            .addChannelTypes(ChannelType.GuildText);
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
           const row = new ActionRowBuilder<any>().addComponents(ChannelSelect);
 
