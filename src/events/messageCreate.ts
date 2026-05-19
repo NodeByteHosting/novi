@@ -37,26 +37,54 @@ async function getAllowedGuildIds(): Promise<string[]> {
   return allGuildIds;
 }
 
-// Command aliases mapping
+// Command aliases mapping — targets must match an existing file in src/prefix/
 const COMMAND_ALIASES: Record<string, string> = {
-  // Support command aliases
-  'ts': 'techsupport',
-  'tech': 'techsupport',
-  'gs': 'vps',
-  'game': 'vps',
-  'gameserver': 'vps',
-  'mc': 'minecraft',
-  'rust': 'rust',
-  'hytale': 'hytale',
-  'panel': 'panel',
-  'p': 'panel',
-  'billing': 'sales/billing',
-  'b': 'sales/billing',
-  'partner': 'sales/partners',
-  'partners': 'sales/partners',
-  'guides': 'guides',
-  'g': 'guides',
-  'support': 'support',
+  // billing
+  'b': 'billing',
+  // bytesend
+  'bs': 'bytesend',
+  'send': 'bytesend',
+  // crash
+  'crashed': 'crash',
+  'crashing': 'crash',
+  // docs
+  'doc': 'docs',
+  'd': 'docs',
+  // faq
+  'f': 'faq',
+  'questions': 'faq',
+  // fullscreen
+  'fs': 'fullscreen',
+  'full': 'fullscreen',
+  // java
+  'j': 'java',
+  // lag
+  'lagging': 'lag',
+  'tps': 'lag',
+  // logs
+  'log': 'logs',
+  // mods
+  'mod': 'mods',
+  'm': 'mods',
+  // partnerinfo
+  'pi': 'partnerinfo',
+  'newpartner': 'partnerinfo',
+  // partnership
+  'partner': 'partnership',
+  'partners': 'partnership',
+  // plugins
+  'plugin': 'plugins',
+  'p': 'plugins',
+  // services
+  'service': 'services',
+  'svc': 'services',
+  // status
+  's': 'status',
+  // support
+  'sup': 'support',
+  // update
+  'updates': 'update',
+  'u': 'update',
 }
 
 export default async (client: Client, message: Message) => {
