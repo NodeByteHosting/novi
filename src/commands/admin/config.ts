@@ -606,9 +606,33 @@ export async function execute(interaction: ChatInputCommandInteraction) {
         });
       }
 
-      const nextLevelThreshold = db.calculateLevelThreshold(userLevel.level + 1, config.baseThreshold, config.exponentFactor);
-      const currentLevelThreshold = userLevel.level > 0 ? db.calculateLevelThreshold(userLevel.level, config.baseThreshold, config.exponentFactor) : 0;
-      const progressPercent = userLevel.level === 0 ? 0 : Math.round(((userLevel.activityPoints - currentLevelThreshold) / (nextLevelThreshold - currentLevelThreshold)) * 100);
+      // Recalculate the true level from points (self-heals stale DB values)
+      let calculatedLevel = 0;
+      for (let i = 1; i <= config.maxLevel; i++) {
+        const threshold = db.calculateLevelThreshold(i, config.baseThreshold, config.exponentFactor);
+        if (userLevel.activityPoints >= threshold) {
+          calculatedLevel = i;
+        } else {
+          break;
+        }
+      }
+
+      // Persist if the stored level is stale
+      if (calculatedLevel !== userLevel.level) {
+        await db.updateUserLevel(guildId, targetUser.id, calculatedLevel).catch(() => null);
+        userLevel.level = calculatedLevel;
+      }
+
+      const currentLevelThreshold = calculatedLevel > 0
+        ? db.calculateLevelThreshold(calculatedLevel, config.baseThreshold, config.exponentFactor)
+        : 0;
+      const nextLevelThreshold = calculatedLevel < config.maxLevel
+        ? db.calculateLevelThreshold(calculatedLevel + 1, config.baseThreshold, config.exponentFactor)
+        : null;
+
+      const progressPercent = nextLevelThreshold !== null
+        ? Math.min(100, Math.round(((userLevel.activityPoints - currentLevelThreshold) / (nextLevelThreshold - currentLevelThreshold)) * 100))
+        : 100;
 
       return interaction.reply({
         embeds: [
@@ -617,12 +641,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
             .setTitle(`⭐ ${targetUser.username}'s Level`)
             .setThumbnail(targetUser.displayAvatarURL())
             .addFields(
-              { name: 'Current Level', value: `${userLevel.level}/${config.maxLevel}`, inline: true },
+              { name: 'Current Level', value: `${calculatedLevel}/${config.maxLevel}`, inline: true },
               { name: 'Activity Points', value: userLevel.activityPoints.toString(), inline: true },
               { name: 'Messages Sent', value: userLevel.messageCount.toString(), inline: true },
               { name: 'Reactions Given', value: userLevel.reactionCount.toString(), inline: true },
-              { name: 'Progress to Next', value: `${progressPercent}%`, inline: true },
-              { name: 'Next Level At', value: `${nextLevelThreshold} points`, inline: true }
+              { name: 'Progress to Next', value: nextLevelThreshold !== null ? `${progressPercent}%` : 'MAX LEVEL', inline: true },
+              { name: 'Next Level At', value: nextLevelThreshold !== null ? `${nextLevelThreshold} points` : '—', inline: true }
             )
         ],
         flags: [64]

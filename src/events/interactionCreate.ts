@@ -2,8 +2,17 @@ import { Client, Interaction, EmbedBuilder, TextChannel, ChannelType, ButtonBuil
 import db from '../lib/db';
 import { logger } from '../lib/logger';
 import { ExtendedClient } from '../types';
-import { generateTranscriptHTML, generateTranscriptSlug } from '../lib/transcriptGenerator';
-import { createTranscriptUrl } from '../lib/transcriptServer';
+import { performTicketClose } from '../lib/ticketClose';
+import {
+  addAssignedOnlineMembersToThread,
+  buildTicketCreateMessage,
+  buildTicketModal,
+  getTicketCategoryEmoji,
+  getTicketHandlerRoleIds,
+  getTicketCategoryOptions,
+  hasAnyTicketHandlerRole,
+  removeOtherAssignedMembersFromThread,
+} from '../lib/tickets';
 
 type SupportedInteraction = ChatInputCommandInteraction | StringSelectMenuInteraction | ChannelSelectMenuInteraction | ButtonInteraction | ModalSubmitInteraction;
 
@@ -238,22 +247,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
         if (interaction.customId === 'ticket_category_select') {
           try {
             const category = interaction.values[0];
-
-            const modal = new ModalBuilder()
-              .setCustomId(`ticket_modal_${category}`)
-              .setTitle(`Create a ${category.charAt(0).toUpperCase() + category.slice(1)} Ticket`);
-
-            const createMsgInput = new TextInputBuilder()
-              .setCustomId('ticket_description_input')
-              .setLabel('Describe Your Issue')
-              .setStyle(TextInputStyle.Paragraph)
-              .setPlaceholder('Please describe your issue in detail...')
-              .setRequired(true)
-              .setMinLength(10)
-              .setMaxLength(2000);
-
-            const row1 = new ActionRowBuilder<TextInputBuilder>().addComponents(createMsgInput);
-            modal.addComponents(row1);
+            const modal = buildTicketModal(category);
 
             await interaction.showModal(modal);
           } catch (err) {
@@ -287,15 +281,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
             const selectMenu = new StringSelectMenuBuilder()
               .setCustomId('ticket_category_select')
               .setPlaceholder('Select a ticket category')
-              .addOptions(
-                { label: 'General Support', value: 'general', emoji: '📋', description: 'General questions and support' },
-                { label: 'Technical Support', value: 'tech', emoji: '🖥️', description: 'Technical issues and troubleshooting' },
-                { label: 'Game Server', value: 'game', emoji: '🎮', description: 'FiveM, Minecraft, Rust server support' },
-                { label: 'VPS / Hosting', value: 'vps', emoji: '🔧', description: 'VPS and hosting related issues' },
-                { label: 'Bug Report', value: 'bug', emoji: '🐛', description: 'Report a bug or issue' },
-                { label: 'Feature Request', value: 'feature', emoji: '✨', description: 'Request a new feature' },
-                { label: 'Sales', value: 'sales', emoji: '📞', description: 'Sales, partnership inquiries' }
-              );
+              .addOptions(getTicketCategoryOptions());
 
             const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
 
@@ -333,16 +319,6 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               return;
             }
 
-            // Only allow support role members to claim tickets
-            const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
-            const member = interaction.member as GuildMember;
-            if (!supportRoles || !member.roles.cache.some(role => supportRoles.includes(role.id))) {
-              return interaction.reply({ 
-                content: '❌ Only support staff can claim tickets.', 
-                flags: [64] 
-              });
-            }
-
             const ticket = await db.getTicket(ticketThread.id);
             if (!ticket) {
               logger.warn('Ticket not found in database', {
@@ -351,6 +327,15 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 userId: interaction.user.id
               });
               return interaction.reply({ content: '❌ Ticket not found.', flags: [64] });
+            }
+
+            const allowedRoleIds = await getTicketHandlerRoleIds(ticketThread.guild?.id || '', ticket.category);
+            const member = interaction.member as GuildMember;
+            if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) && !hasAnyTicketHandlerRole(member, allowedRoleIds)) {
+              return interaction.reply({ 
+                content: '❌ Only the assigned team can claim this ticket.', 
+                flags: [64] 
+              });
             }
 
             if (ticket.claimedBy) {
@@ -382,27 +367,13 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
               // Remove other support staff from thread (only claimer stays)
               try {
-                const config = await db.getOrCreateGuildConfig(ticketThread.guild?.id || '');
-                const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
-                
-                if (supportRoles && supportRoles.length > 0 && ticketThread.guild) {
-                  const members = await ticketThread.guild.members.fetch();
-                  
-                  for (const [, member] of members) {
-                    // If member has support role but isn't the claimer, remove them
-                    if (member.roles.cache.some(role => supportRoles.includes(role.id)) && member.id !== interaction.user.id) {
-                      try {
-                        await ticketThread.members.remove(member.id);
-                      } catch (remErr) {
-                        logger.warn('Failed to remove member from ticket', {
-                          context: 'ButtonHandler',
-                          error: remErr,
-                          threadId: ticketThread.id,
-                          memberId: member.id
-                        });
-                      }
-                    }
-                  }
+                if (allowedRoleIds.length > 0 && ticketThread.guild) {
+                  await removeOtherAssignedMembersFromThread(
+                    ticketThread.guild,
+                    ticketThread,
+                    ticket.category,
+                    interaction.user.id
+                  );
                 }
               } catch (memberErr) {
                 logger.warn('Failed to manage ticket members after claim', {
@@ -480,29 +451,8 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
 
               // Re-add online support staff members to thread
               try {
-                const config = await db.getOrCreateGuildConfig(ticketThread.guild?.id || '');
-                const supportRoles = await db.getSupportRoles(ticketThread.guild?.id || '');
-                
-                if (supportRoles && supportRoles.length > 0 && ticketThread.guild) {
-                  const members = await ticketThread.guild.members.fetch({ withPresences: true });
-                  
-                  for (const [, member] of members) {
-                    // If member has support role and is online, add them back
-                    const hasSupportRole = member.roles.cache.some(role => supportRoles.includes(role.id));
-                    const isOnline = member.presence && member.presence.status !== 'offline';
-                    if (hasSupportRole && isOnline) {
-                      try {
-                        await ticketThread.members.add(member.id);
-                      } catch (addErr) {
-                        logger.warn('Failed to add member back to ticket', {
-                          context: 'ButtonHandler',
-                          error: addErr,
-                          threadId: ticketThread.id,
-                          memberId: member.id
-                        });
-                      }
-                    }
-                  }
+                if (ticketThread.guild) {
+                  await addAssignedOnlineMembersToThread(ticketThread.guild, ticketThread, ticket.category);
                 }
               } catch (memberErr) {
                 logger.warn('Failed to manage ticket members after unclaim', {
@@ -583,7 +533,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
         if (interaction.customId.startsWith('ticket_modal_')) {
           try {
             const category = interaction.customId.replace('ticket_modal_', '');
-            const createMsg = interaction.fields.getTextInputValue('ticket_description_input');
+            const createMsg = buildTicketCreateMessage(interaction, category);
             const user = interaction.user;
             const guild = interaction.guild;
 
@@ -602,17 +552,6 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 flags: [64] 
               });
             }
-
-            const categoryEmojis: Record<string, string> = {
-              general: '📋',
-              tech: '🖥️',
-              game: '🎮',
-              vps: '🔧',
-              billing: '💳',
-              bug: '🐛',
-              feature: '✨',
-              sales: '📞'
-            };
 
             try {
               await interaction.deferReply({ flags: [64] });
@@ -688,30 +627,8 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                   });
                 }
 
-                // Add online members with support roles to the thread
-                const supportRoles = await db.getSupportRoles(guild.id);
-                if (supportRoles && supportRoles.length > 0) {
-                  // Fetch all guild members to check for support roles
-                  const members = await guild.members.fetch({ withPresences: true });
-                  
-                  for (const [, member] of members) {
-                    // Check if member has any support role and is online (not offline)
-                    const hasSupportRole = member.roles.cache.some(role => supportRoles.includes(role.id));
-                    const isOnline = member.presence && member.presence.status !== 'offline';
-                    if (hasSupportRole && isOnline) {
-                      try {
-                        await thread.members.add(member.id);
-                      } catch (roleErr) {
-                        logger.warn('Failed to add support member to thread', {
-                          context: 'ModalHandler',
-                          error: roleErr,
-                          threadId: thread.id,
-                          memberId: member.id
-                        });
-                      }
-                    }
-                  }
-                }
+                // Add online members from the team assigned to this ticket category
+                await addAssignedOnlineMembersToThread(guild, thread, category);
               } catch (memberErr) {
                 logger.warn('Failed to add members to thread', {
                   context: 'ModalHandler',
@@ -724,7 +641,7 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
               // Create ticket info embed
               const ticketEmbed = new EmbedBuilder()
                 .setColor(0x3256d9)
-                .setTitle(`${categoryEmojis[category]} ${category.charAt(0).toUpperCase() + category.slice(1)} Support`)
+                .setTitle(`${getTicketCategoryEmoji(category)} ${category.charAt(0).toUpperCase() + category.slice(1)} Support`)
                 .setDescription(createMsg)
                 .addFields(
                   { name: 'Created by:', value: user.toString(), inline: true },
@@ -793,10 +710,9 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
                 if (ticketLogsChannelId) {
                   const logsChannel = guild.channels.cache.get(ticketLogsChannelId) as TextChannel;
                   if (logsChannel && 'send' in logsChannel) {
-                    // Get support roles to ping
-                    const supportRoles = await db.getSupportRoles(guild.id);
-                    const pingText = (supportRoles && supportRoles.length > 0 && !config?.disableSupportNotifications)
-                      ? supportRoles.map(roleId => `<@&${roleId}>`).join(' ')
+                    const handlerRoleIds = await getTicketHandlerRoleIds(guild.id, category);
+                    const pingText = (handlerRoleIds.length > 0 && !config?.disableSupportNotifications)
+                      ? handlerRoleIds.map(roleId => `<@&${roleId}>`).join(' ')
                       : '';
 
                     const ticketCreatedEmbed = new EmbedBuilder()
@@ -874,252 +790,37 @@ export default async (client: ExtendedClient, interaction: Interaction) => {
         }
 
         if (interaction.customId === 'ticket_close_modal') {
-        try {
-          const ticketThread = interaction.channel as ThreadChannel;
-          if (!ticketThread?.isThread()) {
-            logger.warn('Modal used outside thread context', {
-              context: 'ModalHandler',
-              userId: interaction.user.id,
-              customId: interaction.customId,
-              channelId: interaction.channelId
-            });
-            return;
-          }
-
-          const ticket = await db.getTicket(ticketThread.id);
-          if (!ticket) {
-            logger.warn('Ticket not found in database for close modal', {
-              context: 'ModalHandler',
-              threadId: ticketThread.id,
-              userId: interaction.user.id
-            });
-            return interaction.reply({ content: '❌ Ticket not found.', flags: [64] });
-          }
-
-          const closedBy = interaction.user;
-          const closeReason = interaction.fields.getTextInputValue('close_reason');
-
           try {
-            await interaction.reply({ content: '🔒 Closing ticket and generating transcript...', flags: [64] });
-          } catch (replyErr) {
-            logger.error('Failed to send closing message', {
-              context: 'ModalHandler',
-              error: replyErr
-            });
-          }
-
-          try {
-            // Get guild config
-            const config = await db.getGuildConfig(ticketThread.guild!.id);
-            const guild = ticketThread.guild!;
-            const guildName = guild.name;
-
-            // Generate HTML transcript
-            let htmlContent = '';
-            let transcriptSlug = '';
-            try {
-              const messages = await ticketThread.messages.fetch({ limit: 100 });
-              const sortedMessages = Array.from(messages.values());
-
-              htmlContent = await generateTranscriptHTML(
-                ticketThread,
-                guildName,
-                ticketThread.name,
-                sortedMessages,
-                closedBy.tag,
-                ticket.closeMsg || undefined,
-                ticket.category,
-                ticket.createMsg || undefined
-              );
-
-              transcriptSlug = generateTranscriptSlug();
-
-              // Save transcript to database
-              await db.createTranscript(
-                guild.id,
-                ticketThread.id,
-                ticketThread.id,
-                ticket.userId,
-                ticket.category,
-                transcriptSlug,
-                htmlContent
-              );
-
-              logger.debug('Ticket HTML transcript generated and saved', {
+            const ticketThread = interaction.channel as ThreadChannel;
+            if (!ticketThread?.isThread()) {
+              logger.warn('Modal used outside thread context', {
                 context: 'ModalHandler',
-                threadId: ticketThread.id,
-                slug: transcriptSlug
+                userId: interaction.user.id,
+                customId: interaction.customId,
+                channelId: interaction.channelId
               });
-            } catch (transcriptErr) {
-              logger.error('Failed to generate HTML transcript', {
-                context: 'ModalHandler',
-                error: transcriptErr,
-                threadId: ticketThread.id
-              });
+              return;
             }
 
-            // Send transcript link to ticket logs channel
+            const closeReason = interaction.fields.getTextInputValue('close_reason');
+
             try {
-              const ticketLogsChannelId = config?.ticketLogChannelId;
-              if (ticketLogsChannelId) {
-                const logsChannel = ticketThread.guild?.channels.cache.get(ticketLogsChannelId) as TextChannel;
-                if (logsChannel && 'send' in logsChannel) {
-                  const logEmbed = new EmbedBuilder()
-                    .setColor(0x3256d9)
-                    .setTitle('🔒 Ticket Closed')
-                    .addFields(
-                      { name: 'Ticket', value: ticketThread.name, inline: true },
-                      { name: 'Category', value: ticket.category, inline: true },
-                      { name: 'Closed By', value: closedBy.toString(), inline: true },
-                      { name: 'Thread ID', value: ticketThread.id, inline: true },
-                      { name: 'Close Reason', value: closeReason, inline: false }
-                    )
-                    .setThumbnail(closedBy.displayAvatarURL())
-                    .setTimestamp();
-
-                  if (transcriptSlug) {
-                    const transcriptUrl = createTranscriptUrl(transcriptSlug);
-                    logEmbed.addFields({
-                      name: 'Transcript Link',
-                      value: `[View Transcript](${transcriptUrl})`,
-                      inline: false
-                    });
-                  }
-
-                  try {
-                    await logsChannel.send({ embeds: [logEmbed] });
-                  } catch (logSendErr) {
-                    logger.error('Failed to send logs to ticket logs channel', {
-                      context: 'ModalHandler',
-                      error: logSendErr,
-                      logsChannelId: ticketLogsChannelId
-                    });
-                  }
-                }
-              }
-            } catch (logsErr) {
-              logger.warn('Error processing ticket logs channel', {
-                context: 'ModalHandler',
-                error: logsErr
-              });
+              await interaction.reply({ content: '🔒 Closing ticket and generating transcript...', flags: [64] });
+            } catch (replyErr) {
+              logger.error('Failed to send closing message', { context: 'ModalHandler', error: replyErr });
             }
 
-            // DM transcript link to ticket creator
-            try {
-              const creatorUser = await interaction.client.users.fetch(ticket.userId);
-              const dmEmbed = new EmbedBuilder()
-                .setColor(0x3256d9)
-                .setTitle('🎫 Your Ticket Has Been Closed')
-                .setDescription(`Your **${ticket.category}** support ticket has been closed.`)
-                .addFields(
-                  { name: 'Closed By:', value: closedBy.tag, inline: true },
-                  { name: 'Reason:', value: closeReason, inline: false }
-                )
-                .setTimestamp();
+            const result = await performTicketClose(ticketThread, interaction.user, closeReason, interaction.client);
 
-              if (transcriptSlug) {
-                const transcriptUrl = createTranscriptUrl(transcriptSlug);
-                dmEmbed.addFields({
-                  name: '📄 View Your Transcript',
-                  value: `[Click here to view transcript](${transcriptUrl})`,
-                  inline: false
-                });
-              }
-
-              try {
-                await creatorUser.send({ embeds: [dmEmbed] });
-              } catch (dmSendErr) {
-                logger.warn('Failed to send DM to user after ticket close', {
-                  context: 'ModalHandler',
-                  error: dmSendErr,
-                  userId: ticket.userId
-                });
-              }
-            } catch (userFetchErr) {
-              logger.warn('Failed to fetch ticket creator for DM', {
-                context: 'ModalHandler',
-                error: userFetchErr,
-                userId: ticket.userId
-              });
-            }
-
-            // Close and archive the thread
-            try {
-              await db.closeTicket(ticketThread.id, closedBy.id, closeReason);
-
-              // Remove the ticket creator's permission override from the parent channel
-              try {
-                const parentChannel = ticketThread.parent as TextChannel;
-                if (parentChannel) {
-                  await parentChannel.permissionOverwrites.delete(
-                    ticket.userId,
-                    `Ticket ${ticketThread.id} closed`
-                  );
-                }
-              } catch (permErr) {
-                logger.warn('Failed to remove permission override for ticket creator', {
-                  context: 'ModalHandler',
-                  error: permErr,
-                  threadId: ticketThread.id,
-                  userId: ticket.userId
-                });
-              }
-
-              await ticketThread.send({ content: `🔒 Ticket closed by ${closedBy.toString()}. This thread will be archived in 5 seconds.` });
-              
-              logger.info('Ticket closed successfully', {
-                context: 'ModalHandler',
-                threadId: ticketThread.id,
-                closedBy: closedBy.id,
-                guildId: ticketThread.guild?.id
-              });
-
-              setTimeout(async () => {
-                try {
-                  await ticketThread.setArchived(true);
-                  logger.debug('Ticket thread archived', {
-                    context: 'ModalHandler',
-                    threadId: ticketThread.id
-                  });
-                } catch (archiveErr) {
-                  logger.error('Failed to archive ticket thread', {
-                    context: 'ModalHandler',
-                    error: archiveErr,
-                    threadId: ticketThread.id
-                  });
-                }
-              }, 5000);
-            } catch (closeErr) {
-              logger.error('Failed to close ticket', {
-                context: 'ModalHandler',
-                error: closeErr,
-                threadId: ticketThread.id
-              });
-              try {
-                await interaction.followUp({ content: '❌ Failed to close ticket.', flags: [64] });
-              } catch (followUpErr) {
-                logger.error('Failed to send close failure followup', {
-                  context: 'ModalHandler',
-                  error: followUpErr
-                });
-              }
+            if (!result.success) {
+              await interaction.followUp({ content: result.error ?? '❌ Failed to close ticket.', flags: [64] }).catch(() => null);
             }
           } catch (err) {
-            logger.interactionError('Error processing ticket close modal', interaction, err);
-            try {
-              await interaction.followUp({ content: '❌ An error occurred while closing the ticket.', flags: [64] });
-            } catch (followUpErr) {
-              logger.error('Failed to send error followup', {
-                context: 'ModalHandler',
-                error: followUpErr
-              });
-            }
+            logger.interactionError('Error in ticket close modal handler', interaction, err);
+            await interaction.followUp({ content: '❌ An error occurred while closing the ticket.', flags: [64] }).catch(() => null);
           }
-        } catch (err) {
-          logger.interactionError('Error in ticket close modal handler', interaction, err);
+          return;
         }
-        return;
-      }
 
       // Handle changelog/announcement creation modal submission
       if (interaction.customId.startsWith('changelog_') && interaction.customId.includes('_step1_')) {

@@ -1,8 +1,8 @@
 import { Message } from 'discord.js';
-import { PrefixCommandMetadata } from '../../lib/prefixCommands';
+import { PrefixCommandMetadata } from '../lib/prefixCommands';
 
 export const metadata: PrefixCommandMetadata = {
-  name: 'partner',
+  name: 'partnership',
   description: 'Partnership, sponsorship, and business inquiries for NodeByte hosting',
   category: '💼 Sales',
   aliases: ['partner', 'partners']
@@ -21,7 +21,7 @@ We're open to partnerships and sponsorships with communities, creators, and proj
 **What we need from you**
 - Your platform(s) and approximate reach (members, subscribers, viewers, etc.)
 - A brief description of your project or community
-- What you're looking for — partnership, sponsorship, or both
+- What you're looking for partnership, sponsorship, or both
 - What you can offer us in return (shoutout, logo placement, affiliate link, etc.)
 
 **What you get**

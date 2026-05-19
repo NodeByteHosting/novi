@@ -3,6 +3,8 @@ import { logger } from '../lib/logger';
 import { isMalicious } from '../lib/malwareFilter';
 import db from '../lib/db';
 import { resolvePrefixCommandFile } from '../lib/prefixCommands';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const PREFIX = '!';
 

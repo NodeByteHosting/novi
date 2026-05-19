@@ -1,5 +1,5 @@
 import { Message } from 'discord.js';
-import { PrefixCommandMetadata } from '../../lib/prefixCommands';
+import { PrefixCommandMetadata } from '../lib/prefixCommands';
 
 export const metadata: PrefixCommandMetadata = {
   name: 'billing',

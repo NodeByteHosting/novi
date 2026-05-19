@@ -30,7 +30,7 @@ export default async (message: Message, args: string[]) => {
   const embed = {
     color: 0x3256d9,
     title: '📚 Help - Prefix Commands',
-    description: 'Available prefix-based commands. Use `!command` to invoke them, including nested paths like `!sales/billing`. Reply to a user\'s message with a command to ping them!',
+    description: 'Available prefix-based commands. Use `!command` to invoke them. Reply to a user\'s message with a command to ping them!',
     fields: fields,
     timestamp: new Date().toISOString(),
     footer: {

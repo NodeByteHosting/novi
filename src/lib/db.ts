@@ -348,6 +348,32 @@ export default {
       return null;
     }
   },
+  async reopenTicket(threadId: string): Promise<Ticket | null> {
+    try {
+      const result = await prisma.ticket.update({
+        where: { threadId },
+        data: {
+          status: 'open',
+          claimedBy: null,
+          closedAt: null,
+          closedBy: null,
+          closeMsg: null
+        }
+      });
+      logger.debug('Ticket reopened', {
+        context: 'Database',
+        threadId
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to reopen ticket', {
+        context: 'Database',
+        error: err,
+        threadId
+      });
+      return null;
+    }
+  },
   async getGuildConfig(guildId: string): Promise<GuildConfig | null> {
     try {
       return await getCachedGuildConfig(guildId);
@@ -538,6 +564,22 @@ export default {
         context: 'Database',
         error: err,
         slug
+      });
+      return null;
+    }
+  },
+  async getTranscriptByThreadId(threadId: string): Promise<any | null> {
+    try {
+      const result = await prisma.transcript.findFirst({
+        where: { threadId },
+        orderBy: { createdAt: 'desc' }
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to fetch transcript by thread ID', {
+        context: 'Database',
+        error: err,
+        threadId
       });
       return null;
     }
@@ -772,6 +814,28 @@ export default {
         data: updateData
       });
 
+      // Recalculate and persist the correct level
+      const config = await this.getLevelConfig(guildId);
+      if (config && config.enabled) {
+        const newPoints = result.activityPoints;
+        let newLevel = 0;
+        for (let i = 1; i <= config.maxLevel; i++) {
+          const threshold = this.calculateLevelThreshold(i, config.baseThreshold, config.exponentFactor);
+          if (newPoints >= threshold) {
+            newLevel = i;
+          } else {
+            break;
+          }
+        }
+        if (newLevel !== result.level) {
+          await prisma.userLevel.update({
+            where: { guildId_userId: { guildId, userId } },
+            data: { level: newLevel }
+          });
+          result.level = newLevel;
+        }
+      }
+
       return result;
     } catch (err) {
       logger.error('Failed to add activity points', {
@@ -780,6 +844,23 @@ export default {
         guildId,
         userId,
         points
+      });
+      return null;
+    }
+  },
+
+  async updateUserLevel(guildId: string, userId: string, level: number) {
+    try {
+      return await prisma.userLevel.update({
+        where: { guildId_userId: { guildId, userId } },
+        data: { level }
+      });
+    } catch (err) {
+      logger.error('Failed to update user level', {
+        context: 'Database',
+        error: err,
+        guildId,
+        userId
       });
       return null;
     }
