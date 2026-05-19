@@ -1190,5 +1190,199 @@ export default {
       });
       return [];
     }
+  },
+
+  // ===== WARNING MANAGEMENT =====
+  async removeWarning(warningId: number): Promise<Warning | null> {
+    try {
+      const result = await prisma.warning.delete({
+        where: { id: warningId }
+      });
+      logger.dbOperation('removeWarning', true);
+      return result;
+    } catch (err) {
+      logger.dbOperation('removeWarning', false, err);
+      logger.error('Failed to remove warning', {
+        context: 'Database',
+        error: err,
+        warningId
+      });
+      return null;
+    }
+  },
+
+  async clearWarnings(guildId: string, userId: string): Promise<boolean> {
+    try {
+      await prisma.warning.deleteMany({
+        where: {
+          guildId,
+          userId
+        }
+      });
+      logger.dbOperation('clearWarnings', true);
+      return true;
+    } catch (err) {
+      logger.dbOperation('clearWarnings', false, err);
+      logger.error('Failed to clear warnings', {
+        context: 'Database',
+        error: err,
+        userId,
+        guildId
+      });
+      return false;
+    }
+  },
+
+  // ===== LEVEL LEADERBOARD =====
+  async getLeaderboard(guildId: string, limit: number = 10): Promise<any[]> {
+    try {
+      const results = await prisma.userLevel.findMany({
+        where: { guildId },
+        orderBy: [
+          { level: 'desc' },
+          { activityPoints: 'desc' }
+        ],
+        take: limit
+      });
+      return results;
+    } catch (err) {
+      logger.error('Failed to fetch leaderboard', {
+        context: 'Database',
+        error: err,
+        guildId
+      });
+      return [];
+    }
+  },
+
+  // ===== MODERATION NOTES =====
+  async addModNote(guildId: string, moderatorId: string, targetId: string, note: string): Promise<ModerationLog | null> {
+    try {
+      const result = await prisma.moderationLog.create({
+        data: {
+          action: 'note',
+          guildId,
+          moderatorId,
+          targetId,
+          reason: note
+        }
+      });
+      logger.dbOperation('addModNote', true);
+      return result;
+    } catch (err) {
+      logger.dbOperation('addModNote', false, err);
+      logger.error('Failed to add mod note', {
+        context: 'Database',
+        error: err,
+        targetId,
+        guildId
+      });
+      return null;
+    }
+  },
+
+  // ===== TICKET USER PERSISTENCE =====
+  async addTicketUser(threadId: string, userId: string): Promise<Ticket | null> {
+    try {
+      const ticket = await prisma.ticket.findUnique({ where: { threadId } });
+      if (!ticket) return null;
+
+      let addedUserIds: string[] = [];
+      if (ticket.addedUserIds) {
+        try {
+          addedUserIds = JSON.parse(ticket.addedUserIds);
+        } catch (err) {
+          addedUserIds = [];
+        }
+      }
+
+      // Add user if not already in list
+      if (!addedUserIds.includes(userId)) {
+        addedUserIds.push(userId);
+      }
+
+      const result = await prisma.ticket.update({
+        where: { threadId },
+        data: { addedUserIds: JSON.stringify(addedUserIds) }
+      });
+
+      logger.debug('Ticket user added', {
+        context: 'Database',
+        threadId,
+        userId
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to add ticket user', {
+        context: 'Database',
+        error: err,
+        threadId,
+        userId
+      });
+      return null;
+    }
+  },
+
+  async removeTicketUser(threadId: string, userId: string): Promise<Ticket | null> {
+    try {
+      const ticket = await prisma.ticket.findUnique({ where: { threadId } });
+      if (!ticket) return null;
+
+      let addedUserIds: string[] = [];
+      if (ticket.addedUserIds) {
+        try {
+          addedUserIds = JSON.parse(ticket.addedUserIds);
+        } catch (err) {
+          addedUserIds = [];
+        }
+      }
+
+      // Remove user
+      addedUserIds = addedUserIds.filter(id => id !== userId);
+
+      const result = await prisma.ticket.update({
+        where: { threadId },
+        data: { addedUserIds: JSON.stringify(addedUserIds) }
+      });
+
+      logger.debug('Ticket user removed', {
+        context: 'Database',
+        threadId,
+        userId
+      });
+      return result;
+    } catch (err) {
+      logger.error('Failed to remove ticket user', {
+        context: 'Database',
+        error: err,
+        threadId,
+        userId
+      });
+      return null;
+    }
+  },
+
+  async getTicketAddedUsers(threadId: string): Promise<string[]> {
+    try {
+      const ticket = await prisma.ticket.findUnique({ where: { threadId } });
+      if (!ticket || !ticket.addedUserIds) return [];
+
+      try {
+        return JSON.parse(ticket.addedUserIds);
+      } catch (err) {
+        logger.warn('Failed to parse ticket added users', {
+          context: 'Database',
+          threadId
+        });
+        return [];
+      }
+    } catch (err) {
+      logger.error('Failed to get ticket added users', {
+        context: 'Database',
+        error: err,
+        threadId
+      });
+      return [];
+    }
   }
 };

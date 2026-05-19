@@ -41,6 +41,7 @@ model Ticket {
   closeMsg    String?  @db.Text @map("close_msg") // Message when ticket was closed
   status      String   @default("open")
   claimedBy   String?  @map("claimed_by")
+  addedUserIds String? @map("added_user_ids") // JSON array of user IDs manually added to ticket
   createdAt   DateTime @default(now()) @map("created_at")
   closedAt    DateTime? @map("closed_at")
   closedBy    String?  @map("closed_by")

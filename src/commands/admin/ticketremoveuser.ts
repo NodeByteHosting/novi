@@ -54,7 +54,12 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   try {
+    // Remove from Discord thread
     await ticketThread.members.remove(targetUser.id);
+
+    // Remove from tracking for persistence
+    await db.removeTicketUser(ticketThread.id, targetUser.id);
+
     return interaction.reply({
       content: `✅ Removed ${targetUser.toString()} from this ticket.`,
       flags: [64]

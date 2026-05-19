@@ -54,9 +54,14 @@ export async function execute(interaction: ChatInputCommandInteraction) {
   }
 
   try {
+    // Add user to Discord thread
     await ticketThread.members.add(targetUser.id);
+
+    // Track the user in database for persistence through reopen
+    await db.addTicketUser(ticketThread.id, targetUser.id);
+
     return interaction.reply({
-      content: `✅ Added ${targetUser.toString()} to this ticket.`,
+      content: `✅ Added ${targetUser.toString()} to this ticket. (Will persist if reopened)`,
       flags: [64]
     });
   } catch (err) {

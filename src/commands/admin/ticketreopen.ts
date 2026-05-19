@@ -50,8 +50,16 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       await ticketThread.setArchived(false);
     }
 
+    // Add ticket creator
     await ticketThread.members.add(ticket.userId).catch(() => null);
 
+    // Restore manually added users
+    const addedUserIds = await db.getTicketAddedUsers(ticketThread.id);
+    for (const userId of addedUserIds) {
+      await ticketThread.members.add(userId).catch(() => null);
+    }
+
+    // Add assigned team members
     const parentChannel = ticketThread.parent as TextChannel | null;
     if (parentChannel) {
       await parentChannel.permissionOverwrites.create(ticket.userId, {
@@ -68,6 +76,9 @@ export async function execute(interaction: ChatInputCommandInteraction) {
       .setColor(0x3256d9)
       .setTitle('🔓 Ticket Reopened')
       .setDescription(`This ${getTicketCategoryLabel(ticket.category)} ticket has been reopened by ${interaction.user.toString()}.`)
+      .addFields(
+        { name: 'Info', value: `${addedUserIds.length} previously added user(s) have been restored.`, inline: false }
+      )
       .setTimestamp();
 
     await ticketThread.send({ embeds: [embed] }).catch(() => null);
