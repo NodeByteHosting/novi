@@ -24,6 +24,11 @@ const IMPERSONATED_NAMES = [
   'jimmy donaldson',
   'binance ceo', 'cz binance',
   'vitalik buterin',
+  'kai cenat', 'kaicenat',
+  'ishowspeed',
+  'adin ross',
+  'xqc',
+  'pewdiepie',
 ];
 
 // Crypto/payout terms

@@ -11,11 +11,26 @@ import * as path from 'path';
 
 const MAX_OCR_ATTACHMENTS_PER_MESSAGE = 3;
 const SPAM_RAID_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const MALICIOUS_CONTENT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes - single confirmed malware/scam hit
+
+/** Times out the author if the bot is able to moderate them. Best-effort; never throws. */
+async function attemptTimeout(message: Message, durationMs: number, reason: string, logContext: string) {
+  if (!message.guild) return;
+  try {
+    const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
+    if (member?.moderatable) {
+      await member.timeout(durationMs, reason);
+    }
+  } catch (err) {
+    logger.debug('Failed to timeout user', { context: logContext, error: err });
+  }
+}
 
 /**
- * Deletes the offending message(s), DMs the author, and posts an alert to
- * the guild's log channel. Shared by the malware/scam/spam-raid detectors
- * below since they all resolve to the same delete+notify+log flow.
+ * Deletes the offending message(s), DMs the author, posts an alert to the
+ * guild's log channel, and optionally times the author out. Shared by the
+ * malware/scam/spam-raid detectors below since they all resolve to the same
+ * delete+notify+log(+timeout) flow.
  */
 async function deleteAndReport(
   primaryMessage: Message,
@@ -25,9 +40,10 @@ async function deleteAndReport(
     logContext: string;
     dmReason: string;
     embedFields: { name: string; value: string; inline?: boolean }[];
+    timeout?: { durationMs: number; reason: string };
   }
 ) {
-  const { logTitle, logContext, dmReason, embedFields } = opts;
+  const { logTitle, logContext, dmReason, embedFields, timeout } = opts;
 
   try {
     await Promise.all(
@@ -45,9 +61,15 @@ async function deleteAndReport(
       deletedCount: messagesToDelete.length,
     });
 
+    if (timeout) {
+      await attemptTimeout(primaryMessage, timeout.durationMs, timeout.reason, logContext);
+    }
+
     try {
+      const timeoutMinutes = timeout ? Math.round(timeout.durationMs / 60000) : 0;
       await primaryMessage.author.send(
         `Your message(s) in **${primaryMessage.guild?.name || 'a server'}** were automatically deleted: ${dmReason} ` +
+        `${timeout ? `You have also been timed out for ${timeoutMinutes} minute(s). ` : ''}` +
         `If you believe this is a mistake, please contact server staff.`
       );
     } catch {
@@ -63,7 +85,7 @@ async function deleteAndReport(
           const alertEmbed = new EmbedBuilder()
             .setColor(0xFF5555)
             .setTitle(logTitle)
-            .setDescription(`Message(s) from ${primaryMessage.author} automatically deleted`)
+            .setDescription(`Message(s) from ${primaryMessage.author} automatically deleted${timeout ? ` and user timed out for ${Math.round(timeout.durationMs / 60000)}m` : ''}`)
             .addFields(
               { name: 'User', value: `${primaryMessage.author.tag} (${primaryMessage.author.id})`, inline: true },
               { name: 'Channel', value: `${primaryMessage.channel}`, inline: true },
@@ -193,19 +215,10 @@ export default async (client: Client, message: Message) => {
           { name: 'Reason', value: spamCheck.reason || 'N/A', inline: false },
           { name: 'Messages Removed', value: `${uniqueMessages.length}`, inline: true },
         ],
+        timeout: { durationMs: SPAM_RAID_TIMEOUT_MS, reason: 'Automated: cross-channel spam raid detected' },
       });
 
       clearTrackedMessages(message.author.id);
-
-      try {
-        const member = message.member ?? await message.guild.members.fetch(message.author.id).catch(() => null);
-        if (member?.moderatable) {
-          await member.timeout(SPAM_RAID_TIMEOUT_MS, 'Automated: cross-channel spam raid detected');
-        }
-      } catch (timeoutErr) {
-        logger.debug('Failed to timeout spam raid user', { context: 'MessageCreate:SpamDetector', error: timeoutErr });
-      }
-
       return;
     }
   }
@@ -227,6 +240,7 @@ export default async (client: Client, message: Message) => {
         { name: 'Matched', value: `\`${maliciousCheck.matched || 'N/A'}\``, inline: false },
         { name: 'Source', value: ocrText ? 'Message text / image OCR' : 'Message text', inline: true },
       ],
+      timeout: { durationMs: MALICIOUS_CONTENT_TIMEOUT_MS, reason: 'Automated: posted a known malicious link' },
     });
     return;
   }
@@ -243,6 +257,7 @@ export default async (client: Client, message: Message) => {
         { name: 'Signals', value: scamCheck.reasons.map(r => `\`${r}\``).join(', ') || 'N/A', inline: false },
         { name: 'Source', value: ocrText ? 'Message text / image OCR' : 'Message text', inline: true },
       ],
+      timeout: { durationMs: MALICIOUS_CONTENT_TIMEOUT_MS, reason: 'Automated: posted a crypto/payout giveaway scam' },
     });
     return;
   }
