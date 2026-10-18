@@ -4,23 +4,13 @@ import { logger } from './logger';
 
 const prisma = new PrismaClient();
 
-/**
- * In-memory cache for GuildConfig with TTL
- * Reduces repeated database queries for frequently accessed configuration
- */
 const configCache = new Collection<string, { config: GuildConfig | null; expiresAt: number }>();
 const CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-/**
- * Helper to invalidate config cache for a guild
- */
 function invalidateConfigCache(guildId: string): void {
   configCache.delete(guildId);
 }
 
-/**
- * Helper to get cached config or fetch from database
- */
 async function getCachedGuildConfig(guildId: string): Promise<GuildConfig | null> {
   const cached = configCache.get(guildId);
   
@@ -29,9 +19,22 @@ async function getCachedGuildConfig(guildId: string): Promise<GuildConfig | null
     return cached.config;
   }
 
-  const result = await prisma.guildConfig.findUnique({
+  let result = await prisma.guildConfig.findUnique({
     where: { guildId }
   });
+
+  if (!result) {
+    try {
+      result = await prisma.guildConfig.create({ data: { guildId } });
+      logger.info(`Created default guild config for guild ${guildId}`, {
+        context: 'Database',
+        guildId
+      });
+    } catch (err) {
+      if ((err as { code?: string })?.code !== 'P2002') throw err;
+      result = await prisma.guildConfig.findUnique({ where: { guildId } });
+    }
+  }
 
   configCache.set(guildId, {
     config: result,
@@ -393,7 +396,6 @@ export default {
         update: {},
         create: { guildId }
       });
-      // Invalidate cache after creating/updating
       invalidateConfigCache(guildId);
       logger.debug('Guild config created or retrieved', {
         context: 'Database',
@@ -416,7 +418,6 @@ export default {
         update: data,
         create: { guildId, ...data }
       });
-      // Invalidate cache after updating
       invalidateConfigCache(guildId);
       logger.debug('Guild config updated', {
         context: 'Database',
@@ -444,7 +445,7 @@ export default {
         return null;
       }
 
-      // Create a Collection for efficient O(1) lookup
+      
       const channelMap = new Collection<string, string | null>([
         ['logs', config.logsChannelId],
         ['ticket', config.ticketChannelId],
@@ -474,13 +475,11 @@ export default {
         return null;
       }
 
-      // Use Collection for O(1) lookups with partition capability
       const roleMap = new Collection<string, string | null>([
         ['support', config.supportRoleId],
         ['member', config.memberRoleId]
       ]);
 
-      // Partition to separate found and not found roles
       const [found] = roleMap.partition((roleId) => roleId === roleMap.get(roleType));
       return found.first() ?? null;
     } catch (err) {
@@ -500,7 +499,6 @@ export default {
     }
 
     try {
-      // Check if bot can send messages in this channel
       if (!channel.permissionsFor(channel.client.user!)?.has('SendMessages')) {
         logger.warn(`Bot missing SendMessages permission in log channel`, {
           context,

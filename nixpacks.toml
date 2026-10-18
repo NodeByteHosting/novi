@@ -6,4 +6,4 @@ includeNode = false
 cmds = ["bun install", "bun run build"]
 
 [start]
-cmd = "bun start"
+cmd = "bun run start:prod"
